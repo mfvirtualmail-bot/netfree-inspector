@@ -25,14 +25,14 @@ Click the toolbar icon on any page to instantly see:
 
 ## How to install (Developer / Unpacked mode)
 
-1. Clone or download this folder (`chrome-extension/`)
-2. Generate icons (first time only):
+1. Clone or download this repo
+2. Regenerate icons (optional — pre-built PNGs are already committed):
    ```bash
    node create-icons.js
    ```
 3. Open Chrome and go to `chrome://extensions`
 4. Enable **Developer mode** (top-right toggle)
-5. Click **Load unpacked** and select the `chrome-extension/` folder
+5. Click **Load unpacked** and select the repo root (the folder containing `manifest.json`)
 6. The NetFree Inspector icon appears in your toolbar
 
 ---
@@ -65,17 +65,25 @@ Click the toolbar icon on any page to instantly see:
 ## File structure
 
 ```
-chrome-extension/
-├── manifest.json        Manifest V3 config
-├── background.js        Service worker — webRequest listener, state management
+.
+├── manifest.json        Manifest V3 config (name, version, permissions)
+├── background.js        Service worker — webRequest 418 listener, state management
 ├── popup.html           Toolbar popup page
 ├── popup.css            Modern RTL-aware styles
 ├── popup.js             Popup render logic, i18n (Hebrew / English)
+├── options.html         Options page (whitelist / preferences UI)
+├── options.js           Options page logic
+├── harmless-domains.js  Allowlist of known-safe 3rd-party domains
 ├── create-icons.js      Icon generator (pure Node.js, no dependencies)
-├── icons/
-│   ├── icon16.png
-│   ├── icon32.png
-│   ├── icon48.png
-│   └── icon128.png
+├── icons/               Pre-built PNG icons (default + green + red, 4 sizes each)
+├── store/               Chrome Web Store submission assets (listings, privacy policy, promo tile, ZIPs)
+├── CLAUDE.md            Agent/developer project notes
 └── README.md
 ```
+
+## Chrome Web Store submission kit
+
+The `store/` folder contains everything needed to publish or update the listing on the
+Chrome Web Store: Hebrew + English listing copy, privacy policy, promo tile (SVG + PNG),
+screenshot guide, and pre-built upload ZIPs for prior releases. See `store/README.md`
+for the step-by-step submission walkthrough.
