@@ -311,12 +311,14 @@ function buildCard(group, t) {
     copyText(requests.map(r => r.url).join('\n'));
   });
 
-  // Ticket button — copy a friendly subject+body to the clipboard so the
-  // user can paste it into the NetFree ticket form, then open the form
-  // in a separate Chrome popup window (small, frameless), not a full tab.
+  // Ticket button — stash the subject+body in chrome.storage.session
+  // (the netfree-fill content script reads it and auto-fills the form
+  // fields), AND copy them to the clipboard as a paste fallback, then
+  // open the NetFree form in a small Chrome popup window.
   const ticketBtn = card.querySelector('.ticket-btn');
   if (ticketBtn) {
     ticketBtn.addEventListener('click', async () => {
+      await stashPendingTicket();
       await copyTicketContent();
       openTicketWindow(ticketBtn.dataset.ticketUrl);
     });
@@ -446,6 +448,20 @@ function buildTicketContent() {
 async function copyTicketContent() {
   const { clipboard } = buildTicketContent();
   await copyText(clipboard, T[lang].contentCopied);
+}
+
+// Stash the subject + body in chrome.storage.session so the netfree.link
+// content script can pick them up and auto-fill the ticket form fields.
+async function stashPendingTicket() {
+  const { subject, body } = buildTicketContent();
+  try {
+    await chrome.storage.session.set({
+      pendingTicket: { subject, body, ts: Date.now() },
+    });
+  } catch {
+    // storage.session unavailable (older Chrome); the clipboard fallback
+    // still gives the user something to paste.
+  }
 }
 
 // Copy a human-readable, shareable report (WhatsApp/email friendly).
