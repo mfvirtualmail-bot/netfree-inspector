@@ -24,10 +24,14 @@ const T = {
     openTicket:       'פתח בקשה ב-NetFree ↗',
     reload:           'רענן ורשום',
     copied:           '✓ הועתק',
+    contentCopied:    '✓ תוכן הבקשה הועתק — הדבק עם Ctrl+V',
     requests:         (n) => `${n} ${n === 1 ? 'בקשה' : 'בקשות'}`,
     moreRequests:     (n) => `+ ${n} בקשות נוספות`,
     loading:          'טוען…',
     harmlessHidden:   (n) => `+ ${n} חסימות פרסומות/מעקב מוסתרות`,
+    ticketSubject:    (host) => `בעיה באתר ${host}`,
+    ticketIntro:      (host) => `שלום,\nאני מנסה להשתמש באתר ${host} והוא אינו עובד כראוי.\nבבדיקה ב-console של הדפדפן נמצא שהבקשות הבאות נחסמות על ידי נט פרי:`,
+    ticketAsk:        'אבקש לבדוק ולאשר את החסימות הרלוונטיות כדי שהאתר יוכל לפעול תקין. תודה רבה.',
   },
   en: {
     subtitle:         'Block Inspector',
@@ -49,10 +53,14 @@ const T = {
     openTicket:       'Open NetFree Request ↗',
     reload:           'Reload & Record',
     copied:           '✓ Copied',
+    contentCopied:    '✓ Request content copied — paste with Ctrl+V',
     requests:         (n) => `${n} request${n !== 1 ? 's' : ''}`,
     moreRequests:     (n) => `+ ${n} more request${n !== 1 ? 's' : ''}`,
     loading:          'Loading…',
     harmlessHidden:   (n) => `+ ${n} ad/tracker block${n !== 1 ? 's' : ''} hidden`,
+    ticketSubject:    (host) => `Problem with website ${host}`,
+    ticketIntro:      (host) => `Hello,\nI'm trying to use the website ${host} and it isn't working properly.\nWhen checking the browser console I found that the following requests are being blocked by NetFree:`,
+    ticketAsk:        'Please review and whitelist the relevant requests so the site can work correctly. Thank you.',
   },
 };
 
@@ -248,8 +256,10 @@ function buildCard(group, t) {
   const { domain, blockType, requests } = group;
   const meta = BLOCK_META[blockType] ?? BLOCK_META.unknown;
 
-  // Ticket URL — use the first blocked URL + current tab as referrer
-  const ticketUrl = makeTicketUrl(requests[0]?.url ?? `https://${domain}/`, tabUrl);
+  // Ticket URL — describe the *parent page* the user is trying to use,
+  // not the individual blocked sub-resource. The body lists all blocked
+  // requests on the page so NetFree can review them together.
+  const ticketUrl = makeTicketUrl(tabUrl, tabUrl);
 
   // Show up to 4 requests; collapse the rest
   const MAX_SHOW    = 4;
@@ -301,11 +311,13 @@ function buildCard(group, t) {
     copyText(requests.map(r => r.url).join('\n'));
   });
 
-  // Ticket button — open NetFree request form in a separate Chrome popup
-  // window (a small, frameless window), not a full browser tab.
+  // Ticket button — copy a friendly subject+body to the clipboard so the
+  // user can paste it into the NetFree ticket form, then open the form
+  // in a separate Chrome popup window (small, frameless), not a full tab.
   const ticketBtn = card.querySelector('.ticket-btn');
   if (ticketBtn) {
-    ticketBtn.addEventListener('click', () => {
+    ticketBtn.addEventListener('click', async () => {
+      await copyTicketContent();
       openTicketWindow(ticketBtn.dataset.ticketUrl);
     });
   }
@@ -396,6 +408,46 @@ async function copyAll() {
   if (allUrls) await copyText(allUrls);
 }
 
+// Build a NetFree-ticket-ready subject + body covering ALL blocks on the
+// current page (across every blocked domain), grouped by block type.
+// Excludes harmless blocks unless the "show harmless" toggle is on.
+function buildTicketContent() {
+  const t      = T[lang];
+  const host   = pageHost();
+  const groups = blocks
+    .map(g => ({
+      ...g,
+      requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
+    }))
+    .filter(g => g.requests.length > 0);
+
+  const subject = t.ticketSubject(host);
+
+  const sections = groups.map(g => {
+    const label = (BLOCK_META[g.blockType] ?? BLOCK_META.unknown).label(t);
+    const urls  = g.requests.map(r => `  • ${r.url}`).join('\n');
+    return `[${label}] ${g.domain}\n${urls}`;
+  }).join('\n\n');
+
+  const body = `${t.ticketIntro(host)}\n\n${sections}\n\n${t.ticketAsk}`;
+
+  // The clipboard payload is laid out so the user can paste once, or
+  // pick out subject vs. body if NetFree's form has separate fields.
+  const isHe = lang === 'he';
+  const subjLabel = isHe ? 'נושא' : 'Subject';
+  const bodyLabel = isHe ? 'תוכן הבקשה' : 'Request content';
+  const clipboard = `${subjLabel}: ${subject}\n\n${bodyLabel}:\n${body}`;
+
+  return { subject, body, clipboard };
+}
+
+// Copy the ticket content (subject + body) to the clipboard so the user
+// can paste it straight into the NetFree request form.
+async function copyTicketContent() {
+  const { clipboard } = buildTicketContent();
+  await copyText(clipboard, T[lang].contentCopied);
+}
+
 // Copy a human-readable, shareable report (WhatsApp/email friendly).
 // Excludes harmless blocks unless the "show harmless" toggle is on.
 async function copyReport() {
@@ -432,7 +484,7 @@ async function copyReport() {
   await copyText(`${header}\n${body}${footer}`);
 }
 
-async function copyText(text) {
+async function copyText(text, toastMsg) {
   const t = T[lang];
   try {
     await navigator.clipboard.writeText(text);
@@ -446,7 +498,7 @@ async function copyText(text) {
     document.execCommand('copy');
     ta.remove();
   }
-  showToast(t.copied);
+  showToast(toastMsg ?? t.copied);
 }
 
 // ─────────────────────────────────────────────
@@ -468,6 +520,14 @@ function makeTicketUrl(blockedUrl, referrer) {
   const u = encodeURIComponent(blockedUrl);
   const r = encodeURIComponent(referrer);
   return `https://netfree.link/app/#/tickets/new?u=${u}&r=${r}&t=site&bi=`;
+}
+
+function pageHost() {
+  try {
+    return new URL(tabUrl).hostname;
+  } catch {
+    return tabUrl || '—';
+  }
 }
 
 function shortenUrl(url) {
