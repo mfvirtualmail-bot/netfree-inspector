@@ -450,17 +450,19 @@ async function copyTicketContent() {
   await copyText(clipboard, T[lang].contentCopied);
 }
 
-// Stash the subject + body in chrome.storage.session so the netfree.link
+// Stash the subject + body in chrome.storage.local so the netfree.link
 // content script can pick them up and auto-fill the ticket form fields.
+// .local (not .session) because session defaults to TRUSTED_CONTEXTS
+// which excludes content scripts.
 async function stashPendingTicket() {
   const { subject, body } = buildTicketContent();
   try {
-    await chrome.storage.session.set({
+    await chrome.storage.local.set({
       pendingTicket: { subject, body, ts: Date.now() },
     });
   } catch {
-    // storage.session unavailable (older Chrome); the clipboard fallback
-    // still gives the user something to paste.
+    // storage.local unavailable; the clipboard fallback still gives
+    // the user something to paste.
   }
 }
 
