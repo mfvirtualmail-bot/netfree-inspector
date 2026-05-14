@@ -19,15 +19,18 @@ classified by block type, in a toolbar popup.
 under `chrome-extension/` and `chrome-extension-store/`, then extracted into this
 standalone repo with git history preserved via `git filter-repo`.
 
-**Published URLs retained in beit-midrash-finance for backward-compat:**
-The deployed Chrome extension (v1.3.0+) fetches a remote harmless-domains list
-from GitHub Pages of beit-midrash-finance:
-  `https://mfvirtualmail-bot.github.io/beit-midrash-finance/netfree-inspector/harmless-domains.json`
-The Chrome Web Store listing's privacy-policy URL also points to a file in that
-repo. Both locations are intentionally kept there so that already-installed
-copies of the extension don't break. When a future Chrome Web Store release
-changes those URLs to point at this new repo, those old files in
-beit-midrash-finance can be removed.
+**Hosting (v1.4.4+):** This repo now hosts its own GitHub Pages site from
+`/docs/`. The deployed extension fetches `harmless-domains.json` daily from:
+  `https://mfvirtualmail-bot.github.io/netfree-inspector/harmless-domains.json`
+Project landing page: `https://mfvirtualmail-bot.github.io/netfree-inspector/`.
+
+**Legacy URLs in beit-midrash-finance — retained until users upgrade:**
+Versions v1.3.0–v1.4.3 of the extension are still in the wild and fetch from
+the OLD URL inside `beit-midrash-finance/docs/netfree-inspector/`. Those files
+(and `chrome-extension-store/privacy-policy.md` referenced by the live Chrome
+Web Store listing pre-v1.4.4) must stay in beit-midrash-finance until the
+v1.4.4 Chrome Web Store release rolls out to all users, after which they can
+be removed. See the banner in `beit-midrash-finance/CLAUDE.md` for status.
 
 ---
 
@@ -138,6 +141,8 @@ options.html/.js         Options/preferences page
 harmless-domains.js      Allowlist of ignorable 3rd-party domains
 create-icons.js          Pure-Node PNG icon generator
 icons/                   Pre-built PNGs: default + green + red variants, sizes 16/32/48/128
+docs/                    GitHub Pages site root — index.html landing page +
+                         harmless-domains.json (fetched daily by the extension)
 store/                   Chrome Web Store submission kit (listings, privacy policy,
                          promo tile, screenshots guide, upload ZIPs)
 README.md                User-facing docs
