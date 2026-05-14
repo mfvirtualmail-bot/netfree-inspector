@@ -38,11 +38,11 @@ The Chrome Web Store **requires a public URL** for the privacy policy (a GitHub-
 1. The `privacy-policy.md` file in this folder is already committed to the repo.
 2. After it's merged to `main`, it will be viewable at:
    ```
-   https://github.com/mfvirtualmail-bot/beit-midrash-finance/blob/main/chrome-extension-store/privacy-policy.md
+   https://github.com/mfvirtualmail-bot/netfree-inspector/blob/main/store/privacy-policy.md
    ```
 3. That URL is what you paste into the store listing's "Privacy policy" field.
 
-**Better option (optional):** Enable GitHub Pages on the repo and host the policy at a cleaner URL like `https://mfvirtualmail-bot.github.io/beit-midrash-finance/privacy-policy.html`. Not required though — the GitHub markdown URL works.
+**Better option (optional):** This repo already has GitHub Pages enabled (serving `/docs/`), so once a privacy-policy.html is added there the cleaner URL `https://mfvirtualmail-bot.github.io/netfree-inspector/privacy-policy.html` would work. Not required though — the GitHub markdown URL works.
 
 ### 3. Convert the promo tile SVG → PNG
 
@@ -99,8 +99,8 @@ Copy-paste the content from `store-listing-he.md` (recommended as primary, since
 | **Marquee promo tile (1400×560)** | Optional — skip unless you want "featured" placement |
 | **Icon** | Already in the ZIP (no upload needed) |
 | **Official URL** | Optional — can link to the GitHub repo |
-| **Homepage URL** | `https://github.com/mfvirtualmail-bot/beit-midrash-finance` (or your repo URL) |
-| **Support URL** | `https://github.com/mfvirtualmail-bot/beit-midrash-finance/issues` |
+| **Homepage URL** | `https://mfvirtualmail-bot.github.io/netfree-inspector/` (or `https://github.com/mfvirtualmail-bot/netfree-inspector`) |
+| **Support URL** | `https://github.com/mfvirtualmail-bot/netfree-inspector/issues` |
 
 ### Step 3 — Fill in the Privacy tab
 

@@ -10,8 +10,7 @@
 // ── Sources (merged at runtime, deduplicated) ────────────────────────────
 //   1. BUNDLED_FALLBACK  — hardcoded below, always available offline.
 //   2. Remote JSON       — fetched once per day from GitHub Pages:
-//        https://mfvirtualmail-bot.github.io/beit-midrash-finance/
-//                netfree-inspector/harmless-domains.json
+//        https://mfvirtualmail-bot.github.io/netfree-inspector/harmless-domains.json
 //      Cached in chrome.storage.local, falls back gracefully if offline.
 //   3. User custom list  — entries the user added via the options page.
 
@@ -86,7 +85,7 @@ const BUNDLED_FALLBACK = [
 ];
 
 const REMOTE_URL =
-  'https://mfvirtualmail-bot.github.io/beit-midrash-finance/netfree-inspector/harmless-domains.json';
+  'https://mfvirtualmail-bot.github.io/netfree-inspector/harmless-domains.json';
 
 const REMOTE_CACHE_KEY = 'harmlessRemoteCache';
 const USER_CUSTOM_KEY  = 'harmlessUserList';

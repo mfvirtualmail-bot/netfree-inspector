@@ -78,7 +78,7 @@ If this privacy policy changes, the updated version will be published in the ext
 ### 9. Contact
 
 For questions about this policy or the extension, please open an issue on the GitHub repository:
-**https://github.com/mfvirtualmail-bot/beit-midrash-finance**
+**https://github.com/mfvirtualmail-bot/netfree-inspector**
 
 ---
 
@@ -142,4 +142,4 @@ NetFree Inspector היא כלי פיתוח המזהה תגובות HTTP 418 בת
 ### 9. יצירת קשר
 
 לשאלות, פתחו Issue במאגר ה-GitHub:
-**https://github.com/mfvirtualmail-bot/beit-midrash-finance**
+**https://github.com/mfvirtualmail-bot/netfree-inspector**
