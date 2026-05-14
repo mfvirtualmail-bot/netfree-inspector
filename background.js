@@ -40,6 +40,18 @@ async function clearTabData(tabId) {
   await chrome.storage.session.remove(`tab_${tabId}`);
 }
 
+// Swallow "No tab with id" rejections that happen when a tab closes
+// mid-flight (between a webRequest fire and the badge/icon update landing).
+// All other errors still surface.
+function safeTabCall(p) {
+  return Promise.resolve(p).catch(err => {
+    const msg = err && err.message ? err.message : String(err);
+    if (msg.includes('No tab with id')) return; // expected race
+    if (msg.includes('Invalid tab ID'))  return;
+    throw err;
+  });
+}
+
 // ─────────────────────────────────────────────────────────
 // Badge
 // ─────────────────────────────────────────────────────────
@@ -56,11 +68,11 @@ async function refreshBadge(tabId) {
   );
 
   if (meaningful > 0) {
-    chrome.action.setBadgeText({ tabId, text: String(meaningful) });
-    chrome.action.setBadgeBackgroundColor({ tabId, color: '#EF4444' });
-    try { chrome.action.setBadgeTextColor({ tabId, color: '#FFFFFF' }); } catch {}
+    safeTabCall(chrome.action.setBadgeText({ tabId, text: String(meaningful) }));
+    safeTabCall(chrome.action.setBadgeBackgroundColor({ tabId, color: '#EF4444' }));
+    safeTabCall(chrome.action.setBadgeTextColor({ tabId, color: '#FFFFFF' }));
   } else {
-    chrome.action.setBadgeText({ tabId, text: '' });
+    safeTabCall(chrome.action.setBadgeText({ tabId, text: '' }));
   }
 
   await refreshIcon(tabId, meaningful);
@@ -72,19 +84,15 @@ async function refreshBadge(tabId) {
 
 async function refreshIcon(tabId, total) {
   const variant = total > 0 ? 'red' : 'green';
-  try {
-    await chrome.action.setIcon({
-      tabId,
-      path: {
-        16:  `icons/icon16-${variant}.png`,
-        32:  `icons/icon32-${variant}.png`,
-        48:  `icons/icon48-${variant}.png`,
-        128: `icons/icon128-${variant}.png`,
-      },
-    });
-  } catch {
-    // Tab may have closed — ignore
-  }
+  await safeTabCall(chrome.action.setIcon({
+    tabId,
+    path: {
+      16:  `icons/icon16-${variant}.png`,
+      32:  `icons/icon32-${variant}.png`,
+      48:  `icons/icon48-${variant}.png`,
+      128: `icons/icon128-${variant}.png`,
+    },
+  }));
 }
 
 async function resetIcon(tabId) {
@@ -178,7 +186,7 @@ chrome.webRequest.onCompleted.addListener(
 chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (details.frameId !== 0) return; // main frame only
   await clearTabData(details.tabId);
-  try { chrome.action.setBadgeText({ tabId: details.tabId, text: '' }); } catch {}
+  safeTabCall(chrome.action.setBadgeText({ tabId: details.tabId, text: '' }));
   await resetIcon(details.tabId);
 });
 
@@ -211,14 +219,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
     case 'CLEAR_BLOCKS':
       clearTabData(msg.tabId).then(async () => {
-        try { chrome.action.setBadgeText({ tabId: msg.tabId, text: '' }); } catch {}
+        safeTabCall(chrome.action.setBadgeText({ tabId: msg.tabId, text: '' }));
         await resetIcon(msg.tabId);
         reply({ ok: true });
       });
       return true;
 
     case 'GET_TAB_URL':
-      chrome.tabs.get(msg.tabId, (tab) => reply({ url: tab?.url ?? '' }));
+      safeTabCall(chrome.tabs.get(msg.tabId))
+        .then(tab => reply({ url: tab?.url ?? '' }))
+        .catch(()  => reply({ url: '' }));
       return true;
 
     case 'REFRESH_HARMLESS_LIST':
