@@ -124,6 +124,54 @@
   footer a:hover { text-decoration: underline; }
 
   .hidden { display: none !important; }
+
+  /* ── Harmless domains browser ── */
+  .domains-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+  }
+  .domains-meta {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: 10px 16px; margin-bottom: 14px;
+    font-size: 13px; color: var(--muted);
+  }
+  .domains-meta b { color: var(--text); }
+  .domains-search {
+    width: 100%; padding: 10px 14px; font: inherit; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: #f8fafc; color: var(--text);
+    margin-bottom: 14px;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .domains-search:focus {
+    outline: none; border-color: var(--brand); background: #fff;
+  }
+  .domain-group {
+    margin-bottom: 14px;
+  }
+  .domain-group:last-child { margin-bottom: 0; }
+  .domain-group-title {
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .domain-pills {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .domain-pill {
+    font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+    direction: ltr;
+  }
+  .domain-empty {
+    text-align: center; color: var(--muted); font-size: 13px;
+    padding: 18px 0;
+  }
 </style>
 </head>
 <body>
@@ -251,6 +299,33 @@
       </div>
     </section>
 
+    <!-- ── Harmless domains browser ── -->
+    <section>
+      <h2 class="lang-he">רשימת הדומיינים המוסתרים</h2>
+      <h2 class="lang-en hidden">Hidden domains list</h2>
+      <p class="lang-he" style="margin: -8px 0 16px; color: var(--muted); font-size: 14px;">
+        אלה הם דומיינים של פרסומות, אנליטיקה ומעקב שהתוסף מסתיר כברירת מחדל.
+        חסימה שלהם לא משפיעה על תפקוד האתר. הרשימה מתעדכנת אחת ליום בכל התוספים המותקנים.
+      </p>
+      <p class="lang-en hidden" style="margin: -8px 0 16px; color: var(--muted); font-size: 14px;">
+        These are ad, analytics and tracking domains that the extension hides by default.
+        Blocking them doesn't break the page. The list is auto-refreshed once a day on every installed copy.
+      </p>
+      <div class="domains-box">
+        <div class="domains-meta" id="domainsMeta">
+          <span class="lang-he">טוען…</span>
+          <span class="lang-en hidden">Loading…</span>
+        </div>
+        <input
+          type="search"
+          class="domains-search"
+          id="domainsSearch"
+          aria-label="Search domains"
+          placeholder="חפש דומיין… (למשל: facebook, googletagmanager)" />
+        <div id="domainsList"></div>
+      </div>
+    </section>
+
     <!-- ── Contribute ── -->
     <section>
       <h2 class="lang-he">עזור לשפר את הרשימה</h2>
@@ -305,6 +380,91 @@
       current = current === 'he' ? 'en' : 'he';
       localStorage.setItem(KEY, current);
       apply(current);
+    });
+  })();
+
+  // ── Harmless domains list ───────────────────────────────────────────
+  // Fetch harmless-domains.json and render grouped pills with live search.
+  (function () {
+    const meta   = document.getElementById('domainsMeta');
+    const search = document.getElementById('domainsSearch');
+    const list   = document.getElementById('domainsList');
+    if (!meta || !search || !list) return;
+
+    // Group heuristics — bucket each domain into a recognizable family.
+    const GROUPS = [
+      { he: 'Google',                en: 'Google',                test: d => /(^|\.)(google|doubleclick|googlesyndication|googletagmanager|googletagservices|googleadservices)\.[a-z]+$/.test(d) || /^(adservice|adsystem|pagead2)\.google\.com$/.test(d) },
+      { he: 'Meta / Facebook',       en: 'Meta / Facebook',       test: d => /(^|\.)facebook\.net$/.test(d) },
+      { he: 'Twitter / X',           en: 'Twitter / X',           test: d => /twitter\.com$|ads-twitter\.com$/.test(d) },
+      { he: 'TikTok / Snap / Pin',   en: 'TikTok / Snap / Pin',   test: d => /tiktok\.com$|sc-static\.net$|pinterest\.com$/.test(d) },
+      { he: 'Microsoft (Bing/Clarity)', en: 'Microsoft (Bing/Clarity)', test: d => /clarity\.ms$|bat\.bing\.com$/.test(d) },
+      { he: 'אנליטיקה / חוויית משתמש', en: 'Analytics / Heatmaps',  test: d => /(hotjar|mouseflow|fullstory|mixpanel|amplitude|heap|heapanalytics|segment)\.(io|com)$/.test(d) },
+      { he: 'רשתות פרסום',            en: 'Ad networks',            test: d => /(adsrvr\.org|adnxs\.com|rubiconproject\.com|pubmatic\.com|openx\.net|criteo\.(com|net)|taboola\.com|outbrain\.com|moatads\.com|scorecardresearch\.com|quantserve\.com|quantcount\.com|adform\.net)$/.test(d) },
+      { he: 'ניהול קוקיות / הסכמה',   en: 'Cookie / consent banners', test: d => /(onetrust\.com|cookielaw\.org|cookiebot\.com|trustarc\.com)$/.test(d) },
+      { he: 'ניטור שגיאות / ביצועים', en: 'Error / perf monitoring', test: d => /(sentry\.io|bugsnag\.com|newrelic\.com|nr-data\.net|datadoghq\.com|logrocket\.com|rollbar\.com)$/.test(d) },
+    ];
+
+    function bucketize(domains) {
+      const buckets = GROUPS.map(g => ({ ...g, items: [] }));
+      const other   = { he: 'אחר', en: 'Other', items: [] };
+      for (const d of domains) {
+        const found = buckets.find(b => b.test(d));
+        (found || other).items.push(d);
+      }
+      const out = buckets.filter(b => b.items.length > 0);
+      if (other.items.length > 0) out.push(other);
+      return out;
+    }
+
+    let RAW = null; // loaded JSON
+
+    function render(filter = '') {
+      if (!RAW) return;
+      const isHe   = document.documentElement.lang === 'he';
+      const needle = filter.trim().toLowerCase();
+      const all    = RAW.domains.slice().sort();
+      const shown  = needle ? all.filter(d => d.toLowerCase().includes(needle)) : all;
+
+      meta.innerHTML = isHe
+        ? `<span><b>${all.length}</b> דומיינים</span><span>· גרסה ${RAW.version ?? '—'}</span><span>· עודכן ${RAW.updated ?? '—'}</span>` +
+          (needle ? `<span>· <b>${shown.length}</b> תוצאות</span>` : '')
+        : `<span><b>${all.length}</b> domains</span><span>· version ${RAW.version ?? '—'}</span><span>· updated ${RAW.updated ?? '—'}</span>` +
+          (needle ? `<span>· <b>${shown.length}</b> matches</span>` : '');
+
+      if (shown.length === 0) {
+        list.innerHTML = `<div class="domain-empty">${isHe ? 'אין תוצאות' : 'No matches'}</div>`;
+        return;
+      }
+
+      const buckets = bucketize(shown);
+      list.innerHTML = buckets.map(b => `
+        <div class="domain-group">
+          <div class="domain-group-title">${isHe ? b.he : b.en} · ${b.items.length}</div>
+          <div class="domain-pills">
+            ${b.items.map(d => `<span class="domain-pill">${d}</span>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    fetch('./harmless-domains.json', { cache: 'no-cache' })
+      .then(r => r.json())
+      .then(json => {
+        RAW = json;
+        render();
+      })
+      .catch(() => {
+        const isHe = document.documentElement.lang === 'he';
+        meta.innerHTML = '';
+        list.innerHTML = `<div class="domain-empty">${isHe ? 'שגיאה בטעינת הרשימה' : 'Failed to load the list'}</div>`;
+      });
+
+    search.addEventListener('input', e => render(e.target.value));
+
+    // Re-render when language toggles (so group titles + meta swap)
+    document.getElementById('langSwitch').addEventListener('click', () => {
+      // run after the toggle handler has updated <html lang>
+      setTimeout(() => render(search.value), 0);
     });
   })();
 </script>

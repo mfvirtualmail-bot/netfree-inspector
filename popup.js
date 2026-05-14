@@ -29,6 +29,8 @@ const T = {
     moreRequests:     (n) => `+ ${n} בקשות נוספות`,
     loading:          'טוען…',
     harmlessHidden:   (n) => `+ ${n} חסימות פרסומות/מעקב מוסתרות`,
+    showHarmless:     'הצג חסימות פרסומות/מעקב',
+    hideHarmless:     'הסתר חסימות פרסומות/מעקב',
     ticketSubject:    (host) => `בעיה באתר ${host}`,
     ticketIntro:      (host) => `שלום,\nאני מנסה להשתמש באתר ${host} והוא אינו עובד כראוי.\nבבדיקה ב-console של הדפדפן נמצא שהבקשות הבאות נחסמות על ידי נט פרי:`,
     ticketAsk:        'אבקש לבדוק ולאשר את החסימות הרלוונטיות כדי שהאתר יוכל לפעול תקין. תודה רבה.',
@@ -58,6 +60,8 @@ const T = {
     moreRequests:     (n) => `+ ${n} more request${n !== 1 ? 's' : ''}`,
     loading:          'Loading…',
     harmlessHidden:   (n) => `+ ${n} ad/tracker block${n !== 1 ? 's' : ''} hidden`,
+    showHarmless:     'Show ad / tracker blocks',
+    hideHarmless:     'Hide ad / tracker blocks',
     ticketSubject:    (host) => `Problem with website ${host}`,
     ticketIntro:      (host) => `Hello,\nI'm trying to use the website ${host} and it isn't working properly.\nWhen checking the browser console I found that the following requests are being blocked by NetFree:`,
     ticketAsk:        'Please review and whitelist the relevant requests so the site can work correctly. Thank you.',
@@ -139,16 +143,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('reloadBtn').addEventListener('click', reloadTab);
   document.getElementById('copyAllBtn').addEventListener('click', copyAll);
   document.getElementById('reportBtn').addEventListener('click', copyReport);
+  document.getElementById('optionsBtn').addEventListener('click', () => {
+    if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
+  });
 
-  const harmlessEl = document.getElementById('harmlessToggle');
-  if (harmlessEl) {
-    harmlessEl.addEventListener('change', async () => {
-      showHarmless = harmlessEl.checked;
+  const harmlessBtn = document.getElementById('harmlessBtn');
+  if (harmlessBtn) {
+    syncHarmlessBtn(harmlessBtn);
+    harmlessBtn.addEventListener('click', async () => {
+      showHarmless = !showHarmless;
       await chrome.storage.local.set({ showHarmless });
+      syncHarmlessBtn(harmlessBtn);
       render();
     });
   }
 });
+
+function syncHarmlessBtn(btn) {
+  btn.classList.toggle('is-active', showHarmless);
+  btn.setAttribute('aria-pressed', String(showHarmless));
+  const t = T[lang];
+  btn.title = showHarmless ? t.hideHarmless : t.showHarmless;
+  btn.setAttribute('aria-label', btn.title);
+}
 
 // ─────────────────────────────────────────────
 // Data
@@ -169,8 +186,8 @@ function render() {
   const sumTl = document.getElementById('summaryTitle');
   const sumSb = document.getElementById('summarySub');
   const sumIc = document.getElementById('summaryIcon');
-  const hBar  = document.getElementById('harmlessBar');
-  const hCnt  = document.getElementById('harmlessCount');
+  const hBtn  = document.getElementById('harmlessBtn');
+  const hBadge = document.getElementById('harmlessCount');
 
   // Count both harmless and total across all groups
   let totalAll       = 0;
@@ -183,13 +200,15 @@ function render() {
   }
   const meaningful = totalAll - totalHarmless;
 
-  // Harmless bar — only visible if there are harmless blocks
-  if (hBar) {
-    if (totalHarmless > 0) {
-      hBar.style.display = '';
-      if (hCnt) hCnt.textContent = t.harmlessHidden(totalHarmless).replace(/^\+\s*/, '');
+  // Harmless button — show count badge only if there are hidden harmless blocks
+  if (hBtn && hBadge) {
+    if (totalHarmless > 0 && !showHarmless) {
+      hBadge.hidden = false;
+      hBadge.textContent = String(totalHarmless);
+      hBtn.classList.add('has-hidden');
     } else {
-      hBar.style.display = 'none';
+      hBadge.hidden = true;
+      hBtn.classList.remove('has-hidden');
     }
   }
 
@@ -287,13 +306,12 @@ function buildCard(group, t) {
     </div>
 
     <div class="block-card-actions">
-      <button class="card-action-btn copy-group-btn">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        ${esc(t.copyUrl)}
-      </button>
       <button class="card-action-btn ticket-btn" data-ticket-url="${esc(ticketUrl)}" type="button">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         ${esc(t.openTicket)}
+      </button>
+      <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
     </div>
   `;
@@ -372,6 +390,10 @@ function applyLang(newLang, doRender = true) {
   document.querySelectorAll('[data-he][data-en]').forEach(el => {
     el.textContent = el.dataset[lang];
   });
+
+  // Re-localize harmless button title
+  const hBtn = document.getElementById('harmlessBtn');
+  if (hBtn) syncHarmlessBtn(hBtn);
 
   chrome.storage.local.set({ lang });
   if (doRender) render();
