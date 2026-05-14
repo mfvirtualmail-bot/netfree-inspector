@@ -22,6 +22,7 @@ const T = {
     copyUrl:          'העתק',
     copyAll:          'העתק הכל',
     openTicket:       'פתח בקשה ב-NetFree ↗',
+    suggestHarmless:  'הצע להוסיף לרשימת פרסומות/מעקב',
     reload:           'רענן ורשום',
     copied:           '✓ הועתק',
     contentCopied:    '✓ תוכן הבקשה הועתק — הדבק עם Ctrl+V',
@@ -53,6 +54,7 @@ const T = {
     copyUrl:          'Copy',
     copyAll:          'Copy All',
     openTicket:       'Open NetFree Request ↗',
+    suggestHarmless:  'Suggest as ad / tracker (harmless)',
     reload:           'Reload & Record',
     copied:           '✓ Copied',
     contentCopied:    '✓ Request content copied — paste with Ctrl+V',
@@ -313,6 +315,9 @@ function buildCard(group, t) {
       <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
+      <button class="card-action-btn suggest-btn icon-only" data-domain="${esc(domain)}" title="${esc(t.suggestHarmless)}" aria-label="${esc(t.suggestHarmless)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8"/><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg>
+      </button>
     </div>
   `;
 
@@ -342,7 +347,43 @@ function buildCard(group, t) {
     });
   }
 
+  // Suggest-as-harmless button — opens a pre-filled GitHub issue
+  const suggestBtn = card.querySelector('.suggest-btn');
+  if (suggestBtn) {
+    suggestBtn.addEventListener('click', () => {
+      openHarmlessSuggestion(suggestBtn.dataset.domain);
+    });
+  }
+
   return card;
+}
+
+// Open a pre-filled GitHub issue suggesting the domain be added to the
+// shared harmless-domains list. The maintainer reviews, then edits
+// docs/harmless-domains.json — change reaches every installed extension
+// within ~24 hours of the next daily refresh.
+function openHarmlessSuggestion(domain) {
+  const title = `[harmless] add ${domain}`;
+  const body =
+`**Domain:** \`${domain}\`
+
+**Where I saw it blocked:** ${tabUrl || '(not captured)'}
+
+**Why it should be on the harmless list:**
+<!-- Briefly explain why this domain is an ad / tracker / analytics
+     domain that's safe to ignore (it doesn't break the page). -->
+
+---
+_Submitted from NetFree Inspector popup._`;
+  const url = `https://github.com/mfvirtualmail-bot/netfree-inspector/issues/new`
+    + `?title=${encodeURIComponent(title)}`
+    + `&body=${encodeURIComponent(body)}`
+    + `&labels=${encodeURIComponent('harmless-suggestion')}`;
+  if (chrome.tabs && chrome.tabs.create) {
+    chrome.tabs.create({ url });
+  } else {
+    window.open(url, '_blank');
+  }
 }
 
 // Open the NetFree ticket form as a small popup window.
