@@ -133,7 +133,9 @@ chrome.webRequest.onCompleted.addListener(
         resourceType: type,
         timestamp: timeStamp,
         initiator: initiator ?? '',
-        harmless: self.isHarmlessHost ? self.isHarmlessHost(domain) : false,
+        harmless: self.isHarmlessUrl
+                 ? self.isHarmlessUrl(url)
+                 : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
       });
 
       await setTabData(tabId, data);

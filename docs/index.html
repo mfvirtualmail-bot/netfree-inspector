@@ -168,6 +168,11 @@
     border: 1px solid #e2e8f0;
     direction: ltr;
   }
+  .domain-pill.is-path {
+    background: #eff6ff;
+    color: #1e40af;
+    border-color: #bfdbfe;
+  }
   .domain-empty {
     text-align: center; color: var(--muted); font-size: 13px;
     padding: 18px 0;
@@ -425,19 +430,28 @@
       const all    = RAW.domains.slice().sort();
       const shown  = needle ? all.filter(d => d.toLowerCase().includes(needle)) : all;
 
-      meta.innerHTML = isHe
-        ? `<span><b>${all.length}</b> דומיינים</span><span>· גרסה ${RAW.version ?? '—'}</span><span>· עודכן ${RAW.updated ?? '—'}</span>` +
-          (needle ? `<span>· <b>${shown.length}</b> תוצאות</span>` : '')
-        : `<span><b>${all.length}</b> domains</span><span>· version ${RAW.version ?? '—'}</span><span>· updated ${RAW.updated ?? '—'}</span>` +
-          (needle ? `<span>· <b>${shown.length}</b> matches</span>` : '');
+      const urlPatterns = Array.isArray(RAW.url_patterns) ? RAW.url_patterns.slice().sort() : [];
+      const shownPatterns = needle
+        ? urlPatterns.filter(p => p.toLowerCase().includes(needle))
+        : urlPatterns;
 
-      if (shown.length === 0) {
+      meta.innerHTML = isHe
+        ? `<span><b>${all.length}</b> דומיינים</span>` +
+          (urlPatterns.length ? `<span>· <b>${urlPatterns.length}</b> נתיבי URL</span>` : '') +
+          `<span>· גרסה ${RAW.version ?? '—'}</span><span>· עודכן ${RAW.updated ?? '—'}</span>` +
+          (needle ? `<span>· <b>${shown.length + shownPatterns.length}</b> תוצאות</span>` : '')
+        : `<span><b>${all.length}</b> domains</span>` +
+          (urlPatterns.length ? `<span>· <b>${urlPatterns.length}</b> URL paths</span>` : '') +
+          `<span>· version ${RAW.version ?? '—'}</span><span>· updated ${RAW.updated ?? '—'}</span>` +
+          (needle ? `<span>· <b>${shown.length + shownPatterns.length}</b> matches</span>` : '');
+
+      if (shown.length === 0 && shownPatterns.length === 0) {
         list.innerHTML = `<div class="domain-empty">${isHe ? 'אין תוצאות' : 'No matches'}</div>`;
         return;
       }
 
       const buckets = bucketize(shown);
-      list.innerHTML = buckets.map(b => `
+      let html = buckets.map(b => `
         <div class="domain-group">
           <div class="domain-group-title">${isHe ? b.he : b.en} · ${b.items.length}</div>
           <div class="domain-pills">
@@ -445,6 +459,19 @@
           </div>
         </div>
       `).join('');
+
+      if (shownPatterns.length > 0) {
+        html += `
+          <div class="domain-group">
+            <div class="domain-group-title">${isHe ? 'נתיבי URL ספציפיים' : 'Specific URL paths'} · ${shownPatterns.length}</div>
+            <div class="domain-pills">
+              ${shownPatterns.map(p => `<span class="domain-pill is-path">${p}</span>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      list.innerHTML = html;
     }
 
     fetch('./harmless-domains.json', { cache: 'no-cache' })
