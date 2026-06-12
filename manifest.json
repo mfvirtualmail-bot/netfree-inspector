@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "NetFree Inspector",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "גלה חסימות נט פרי בכל דף באחת — Instantly detect NetFree content filter blocks on any page",
   "permissions": [
     "webRequest",
     "tabs",
     "storage",
-    "webNavigation"
+    "webNavigation",
+    "alarms"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -41,6 +42,6 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; img-src 'self' https://netfree.link data:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://mfvirtualmail-bot.github.io"
+    "extension_pages": "default-src 'self'; img-src 'self' https://netfree.link data:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://mfvirtualmail-bot.github.io https://netfree.link"
   }
 }

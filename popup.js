@@ -17,11 +17,21 @@ const T = {
     blacklisted:      '🚫 חסום — האתר ברשימה השחורה',
     notWhitelisted:   '⏳ לא ברשימה הלבנה — ממתין לאישור',
     userSettings:     '⚙️ חסום בהגדרות אישיות',
-    fileType:         '📁 סוג קובץ שאינו נתמך בסינון אוטומטי',
+    fileType:         '📹 וידאו חסום — דרושה בדיקה אנושית',
+    fileTypeSub:      'הסינון האוטומטי של נט פרי לא הצליח לזהות את הקובץ (בד"כ סרטון בעורך וידאו או באחסון זמני). הקלטת התעבורה שמצורפת לבקשה מאפשרת לנציג נט פרי לצפות בסרטון ולבדוק אותו ידנית.',
+    fileDownload:     '⚠️ בעיה בהורדת קובץ',
+    fileDownloadProblem: 'הורדה אוטומטית של קובץ נחסמה ע"י "התראת שיבוש קבצים" של נט פרי. הקובץ שירדת ריק או פגום.',
+    fileDownloadOptions: 'יש שתי דרכים לפתור:',
+    fileDownloadOpt1Label: 'אפשרות 1 — פתח את הקובץ בלשונית חדשה. נט פרי תציג את דף ההתראה, לחץ "המשך לקובץ" וקבל את הקובץ האמיתי:',
+    fileDownloadOpt2Label: 'אפשרות 2 — בטל לצמיתות את התראת שיבוש הקבצים בהגדרות נט פרי:',
     unknown:          '❓ חסום — צד שלישי',
     copyUrl:          'העתק',
     copyAll:          'העתק הכל',
     openTicket:       'פתח בקשה ב-NetFree ↗',
+    sendForReview:    'שלח לבדיקה ↗',
+    sendVideoForReview: 'שלח סרטון לבדיקה ↗',
+    openFileDirect:   'פתח קובץ ישירות ↗',
+    disableWarnGate:  'בטל את ההתראה ב-NetFree ↗',
     suggestHarmless:  'הצע להוסיף לרשימת פרסומות/מעקב',
     reload:           'רענן ורשום',
     copied:           '✓ הועתק',
@@ -35,6 +45,10 @@ const T = {
     ticketSubject:    (host) => `בעיה באתר ${host}`,
     ticketIntro:      (host) => `שלום,\nאני מנסה להשתמש באתר ${host} והוא אינו עובד כראוי.\nבבדיקה ב-console של הדפדפן נמצא שהבקשות הבאות נחסמות על ידי נט פרי:`,
     ticketAsk:        'אבקש לבדוק ולאשר את החסימות הרלוונטיות כדי שהאתר יוכל לפעול תקין. תודה רבה.',
+    ticketVideoSubject:    (host) => `בקשת בדיקת וידאו - ${host}`,
+    ticketVideoIntro:      'שלום,\nאני רוצה לצפות בסרטון הבא. אבקש לבדוק ולאשר אותו. תודה רבה.',
+    ticketVideoLinkLabel:  'קישור ישיר לסרטון',
+    ticketVideoLinksLabel: 'קישורים ישירים',
   },
   en: {
     subtitle:         'Block Inspector',
@@ -49,11 +63,21 @@ const T = {
     blacklisted:      '🚫 Blacklisted — explicitly blocked',
     notWhitelisted:   '⏳ Not whitelisted — pending review',
     userSettings:     '⚙️ Blocked by personal settings',
-    fileType:         '📁 File type not supported by automatic filtering',
+    fileType:         '📹 Video block — manual review required',
+    fileTypeSub:      'NetFree\'s automatic filter couldn\'t classify this file (typically a video from an editor or temp CDN). The traffic recording attached to your request lets a NetFree agent watch the video and review it manually.',
+    fileDownload:     '⚠️ Download problem',
+    fileDownloadProblem: 'An automatic file download was blocked by NetFree\'s file-distortion warning. The file you got is empty or broken.',
+    fileDownloadOptions: 'Two ways to fix this:',
+    fileDownloadOpt1Label: 'Option 1 — Open the file in a new tab. NetFree will show its confirmation page; click "Proceed to the file" to get the real file:',
+    fileDownloadOpt2Label: 'Option 2 — Or permanently disable the file-distortion warning in NetFree settings:',
     unknown:          '❓ Blocked — 3rd party resource',
     copyUrl:          'Copy',
     copyAll:          'Copy All',
     openTicket:       'Open NetFree Request ↗',
+    sendForReview:    'Send for review ↗',
+    sendVideoForReview: 'Send video for review ↗',
+    openFileDirect:   'Open file directly ↗',
+    disableWarnGate:  'Disable warning in NetFree ↗',
     suggestHarmless:  'Suggest as ad / tracker (harmless)',
     reload:           'Reload & Record',
     copied:           '✓ Copied',
@@ -67,6 +91,10 @@ const T = {
     ticketSubject:    (host) => `Problem with website ${host}`,
     ticketIntro:      (host) => `Hello,\nI'm trying to use the website ${host} and it isn't working properly.\nWhen checking the browser console I found that the following requests are being blocked by NetFree:`,
     ticketAsk:        'Please review and whitelist the relevant requests so the site can work correctly. Thank you.',
+    ticketVideoSubject:    (host) => `Video review request — ${host}`,
+    ticketVideoIntro:      'Hello,\nI would like to watch the following video. Please review and approve it. Thank you.',
+    ticketVideoLinkLabel:  'Direct link',
+    ticketVideoLinksLabel: 'Direct links',
   },
 };
 
@@ -91,6 +119,11 @@ const BLOCK_META = {
     badgeClass: 'badge-file-type',
     stripClass: 'strip-file-type',
     label: (t) => t.fileType,
+  },
+  file_download: {
+    badgeClass: 'badge-file-type',
+    stripClass: 'strip-file-type',
+    label: (t) => t.fileDownload,
   },
   unknown: {
     badgeClass: 'badge-unknown',
@@ -191,6 +224,10 @@ function render() {
   const hBtn  = document.getElementById('harmlessBtn');
   const hBadge = document.getElementById('harmlessCount');
 
+  // Reset summary visibility on each render — the file_download-only
+  // branch hides it, so we need to start each call from a clean slate.
+  sum.style.display = '';
+
   // Count both harmless and total across all groups
   let totalAll       = 0;
   let totalHarmless  = 0;
@@ -214,35 +251,31 @@ function render() {
     }
   }
 
-  // ── Summary banner ──────────────────────────────────────
+  // ── No blocks at all — compact green "all clear" panel ─────
+  // Hide the summary banner entirely and render a single small
+  // green confirmation. The page-bar above still shows the domain,
+  // and the reload button stays in the footer; the popup ends up
+  // ~half the height it was before.
   if (totalAll === 0) {
-    sum.className    = 'summary state-clean';
-    sumIc.textContent = '✅';
-    sumTl.textContent = t.noBlocks;
-    sumSb.textContent = '';
-
+    sum.style.display = 'none';
     list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">🛡️</div>
-        <div class="empty-title">${esc(t.noBlocks)}</div>
-        <div class="empty-sub">${esc(t.noBlocksSub)}<br/><br/>${esc(t.noBlocksHint)}</div>
+      <div style="margin:14px 12px;padding:14px 14px 16px;background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:10px;text-align:center;">
+        <div style="font-size:26px;line-height:1;">✅</div>
+        <div style="margin-top:6px;font-size:14px;font-weight:700;color:#065F46;">${esc(t.noBlocks)}</div>
+        <div style="margin-top:4px;font-size:11px;line-height:1.4;color:#047857;">${esc(t.noBlocksSub)}</div>
       </div>
     `;
     return;
   }
 
-  // Only harmless blocks found — green "no meaningful blocks" state
+  // Only harmless blocks found — same compact green panel.
   if (meaningful === 0 && !showHarmless) {
-    sum.className    = 'summary state-clean';
-    sumIc.textContent = '✅';
-    sumTl.textContent = t.noMeaningful;
-    sumSb.textContent = t.noMeaningfulSub;
-
+    sum.style.display = 'none';
     list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">🛡️</div>
-        <div class="empty-title">${esc(t.noMeaningful)}</div>
-        <div class="empty-sub">${esc(t.noMeaningfulSub)}</div>
+      <div style="margin:14px 12px;padding:14px 14px 16px;background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:10px;text-align:center;">
+        <div style="font-size:26px;line-height:1;">✅</div>
+        <div style="margin-top:6px;font-size:14px;font-weight:700;color:#065F46;">${esc(t.noMeaningful)}</div>
+        <div style="margin-top:4px;font-size:11px;line-height:1.4;color:#047857;">${esc(t.noMeaningfulSub)}</div>
       </div>
     `;
     return;
@@ -257,11 +290,21 @@ function render() {
     .filter(g => g.requests.length > 0);
 
   const shownTotal = visibleBlocks.reduce((s, g) => s + g.requests.length, 0);
+  const onlyFileDownload = visibleBlocks.every(g => g.blockType === 'file_download');
 
-  sum.className     = 'summary state-blocks';
-  sumIc.textContent = '🔴';
-  sumTl.textContent = t.blocksFound(shownTotal);
-  sumSb.textContent = t.blocksSubFound;
+  // When every block is a file-download issue, the generic summary
+  // ("1 block found on this page — click Open Request to report") is
+  // both wrong and noisy. The card itself reads as the header. Hide
+  // the banner entirely in that case.
+  if (onlyFileDownload) {
+    sum.style.display = 'none';
+  } else {
+    sum.style.display = '';
+    sum.className     = 'summary state-blocks';
+    sumIc.textContent = '🔴';
+    sumTl.textContent = t.blocksFound(shownTotal);
+    sumSb.textContent = t.blocksSubFound;
+  }
 
   // ── Block cards ─────────────────────────────────────────
   list.innerHTML = '';
@@ -276,16 +319,56 @@ function render() {
 function buildCard(group, t) {
   const { domain, blockType, requests } = group;
   const meta = BLOCK_META[blockType] ?? BLOCK_META.unknown;
+  const isFileDl = blockType === 'file_download';
+
+  // file_download has its own layout — the generic card buries the
+  // two key actions in a small icon and a button row, which doesn't
+  // communicate "this is a different kind of problem with a specific
+  // fix." This branch presents Option 1 and Option 2 as clearly
+  // numbered, full-width actions.
+  if (isFileDl) return buildFileDownloadCard(group, t);
 
   // Ticket URL — describe the *parent page* the user is trying to use,
   // not the individual blocked sub-resource. The body lists all blocked
   // requests on the page so NetFree can review them together.
-  const ticketUrl = makeTicketUrl(tabUrl, tabUrl);
+  // The category (site vs video) depends on what's blocked: video URLs
+  // go through NetFree's t=video review flow, others stay generic.
+  const kind         = ticketKindFor(group);
+  const ticketUrl    = makeTicketUrl(tabUrl, tabUrl, kind.type);
+  const ticketLabel  = t[kind.labelKey] || t.openTicket;
 
   // Show up to 4 requests; collapse the rest
   const MAX_SHOW    = 4;
   const shown       = requests.slice(0, MAX_SHOW);
   const hiddenCount = requests.length - shown.length;
+
+  // The actions row differs for file_download blocks: instead of
+  // "Open NetFree Request" we offer "Open file directly" (gets the
+  // user past the gate via a real tab) and "Disable warning gate"
+  // (opens NetFree's wiki page explaining how to turn it off). Per-row
+  // copy/open buttons handled in reqRowHtml.
+  const actionsHtml = isFileDl
+    ? `
+      <button class="card-action-btn disable-gate-btn" data-url="${esc(NETFREE_DISABLE_GATE_WIKI)}" type="button">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        ${esc(t.disableWarnGate)}
+      </button>
+      <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    `
+    : `
+      <button class="card-action-btn ticket-btn" data-ticket-url="${esc(ticketUrl)}" type="button">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        ${esc(ticketLabel)}
+      </button>
+      <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+      <button class="card-action-btn suggest-btn icon-only" data-domain="${esc(domain)}" title="${esc(t.suggestHarmless)}" aria-label="${esc(t.suggestHarmless)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8"/><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg>
+      </button>
+    `;
 
   const card = document.createElement('div');
   card.className = 'block-card';
@@ -302,22 +385,15 @@ function buildCard(group, t) {
       <span class="block-count-pill">${esc(t.requests(requests.length))}</span>
     </div>
 
+    ${blockType === 'file_type' ? `<div style="margin:0 12px 8px;padding:8px 10px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:11px;line-height:1.45;color:#1E3A8A;">${esc(t.fileTypeSub)}</div>` : ''}
+
     <div class="block-requests" id="reqs-${esc(domain)}">
-      ${shown.map(req => reqRowHtml(req)).join('')}
+      ${shown.map(req => reqRowHtml(req, { isFileDl })).join('')}
       ${hiddenCount > 0 ? `<div class="more-rows">${esc(t.moreRequests(hiddenCount))}</div>` : ''}
     </div>
 
     <div class="block-card-actions">
-      <button class="card-action-btn ticket-btn" data-ticket-url="${esc(ticketUrl)}" type="button">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        ${esc(t.openTicket)}
-      </button>
-      <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      </button>
-      <button class="card-action-btn suggest-btn icon-only" data-domain="${esc(domain)}" title="${esc(t.suggestHarmless)}" aria-label="${esc(t.suggestHarmless)}">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8"/><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg>
-      </button>
+      ${actionsHtml}
     </div>
   `;
 
@@ -341,8 +417,11 @@ function buildCard(group, t) {
   const ticketBtn = card.querySelector('.ticket-btn');
   if (ticketBtn) {
     ticketBtn.addEventListener('click', async () => {
-      await stashPendingTicket();
-      await copyTicketContent();
+      // Pass the clicked group so video-focused cards get the short
+      // "I want to watch this video, please review it" body instead
+      // of the generic "checking the console, found these blocks..."
+      // boilerplate.
+      await stashPendingTicket(group);
       openTicketWindow(ticketBtn.dataset.ticketUrl);
     });
   }
@@ -354,6 +433,124 @@ function buildCard(group, t) {
       openHarmlessSuggestion(suggestBtn.dataset.domain);
     });
   }
+
+  // file_download: per-row "Open file directly" — opens the URL in a
+  // real browser tab so NetFree can render its confirmation gate and
+  // the user can click "Proceed" to actually get the file.
+  card.querySelectorAll('.req-open-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = btn.dataset.url;
+      if (url && chrome.tabs && chrome.tabs.create) {
+        chrome.tabs.create({ url });
+      }
+    });
+  });
+
+  // file_download: card-level "Disable warning gate" — opens NetFree's
+  // wiki page explaining how to turn off the file-distortion warning.
+  const disableBtn = card.querySelector('.disable-gate-btn');
+  if (disableBtn) {
+    disableBtn.addEventListener('click', () => {
+      const url = disableBtn.dataset.url;
+      if (url && chrome.tabs && chrome.tabs.create) {
+        chrome.tabs.create({ url });
+      }
+    });
+  }
+
+  return card;
+}
+
+const NETFREE_DISABLE_GATE_WIKI =
+  'https://netfree.link/wiki/%D7%91%D7%99%D7%98%D7%95%D7%9C_%D7%94%D7%AA%D7%A8%D7%A2%D7%94_%D7%A2%D7%9C_%D7%A9%D7%99%D7%91%D7%95%D7%A9_%D7%A7%D7%91%D7%A6%D7%99%D7%9D';
+
+// Dedicated layout for file_download blocks. The card itself reads
+// as the page header — there's no top "blocks found" banner when only
+// file_download blocks are present (suppressed in render()). Layout:
+//   1. Big "Download problem" heading + tiny domain underneath
+//   2. Red problem-explanation banner
+//   3. Two equal-weight side-by-side option columns
+function buildFileDownloadCard(group, t) {
+  const { domain, requests } = group;
+  const MAX_SHOW = 3;
+  const shown = requests.slice(0, MAX_SHOW);
+  const hiddenCount = requests.length - shown.length;
+  const isHe = lang === 'he';
+  const align = isHe ? 'right' : 'left';
+
+  // Inline styles keep this self-contained without expanding popup.css.
+  // box-sizing + min-width:0 on grid items prevents overflow when the
+  // button content is wider than the column.
+  const S = {
+    header:     `padding:10px 12px 2px;text-align:${align};`,
+    title:      'font-size:14px;font-weight:700;color:#92400E;display:flex;align-items:center;gap:6px;',
+    domain:     `font-size:10px;color:#6B7280;margin-top:2px;direction:ltr;text-align:${align};`,
+    problem:    'margin:8px 12px;padding:8px 10px;background:#FEF3F2;border:1px solid #FECACA;border-radius:6px;font-size:11.5px;line-height:1.45;color:#991B1B;font-weight:500;',
+    optsTitle:  `margin:6px 12px 6px;font-size:11px;font-weight:600;color:#444;text-align:${align};`,
+    grid:       'display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 10px 10px;',
+    col:        `box-sizing:border-box;min-width:0;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:8px 6px;display:flex;flex-direction:column;gap:6px;text-align:${align};`,
+    num:        'font-size:10px;font-weight:700;color:#6B7280;letter-spacing:0.5px;text-transform:uppercase;',
+    text:       'font-size:10.5px;line-height:1.35;color:#4B5563;flex:1;',
+    btnBase:    'box-sizing:border-box;display:block;width:100%;padding:8px 4px;border-radius:6px;font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;',
+    btnOpen:    'background:#2563EB;border:1px solid #1D4ED8;color:#FFFFFF;',
+    btnDisable: 'background:#F59E0B;border:1px solid #D97706;color:#FFFFFF;',
+    btnHint:    `font-size:9.5px;color:#6B7280;text-align:${align};direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;`,
+    moreRows:   'margin-top:4px;font-size:10px;color:#888;text-align:center;',
+  };
+
+  const fileButtons = shown.map((r, i) => {
+    const label = requests.length > 1
+      ? (isHe ? `↗ פתח קובץ ${i + 1}` : `↗ Open file ${i + 1}`)
+      : (isHe ? '↗ פתח קובץ' : '↗ Open file');
+    const short = shortenUrl(r.url);
+    return `
+      <div style="min-width:0;">
+        <button class="filedl-open-btn" data-url="${esc(r.url)}" style="${S.btnBase}${S.btnOpen}" title="${esc(r.url)}" type="button">${esc(label)}</button>
+        <div style="${S.btnHint}" title="${esc(r.url)}">${esc(short)}</div>
+      </div>
+    `;
+  }).join('');
+
+  const card = document.createElement('div');
+  card.className = 'block-card';
+  card.innerHTML = `
+    <div style="${S.header}">
+      <div style="${S.title}">⚠️ ${esc(isHe ? 'בעיה בהורדת קובץ' : 'Download problem')}</div>
+      <div style="${S.domain}">${esc(domain)}</div>
+    </div>
+
+    <div style="${S.problem}">${esc(t.fileDownloadProblem)}</div>
+
+    <div style="${S.optsTitle}">${esc(t.fileDownloadOptions)}</div>
+
+    <div style="${S.grid}">
+      <div style="${S.col}">
+        <div style="${S.num}">${isHe ? 'אפשרות 1' : 'Option 1'}</div>
+        <div style="${S.text}">${esc(t.fileDownloadOpt1Label)}</div>
+        ${fileButtons}
+        ${hiddenCount > 0 ? `<div style="${S.moreRows}">${esc(t.moreRequests(hiddenCount))}</div>` : ''}
+      </div>
+      <div style="${S.col}">
+        <div style="${S.num}">${isHe ? 'אפשרות 2' : 'Option 2'}</div>
+        <div style="${S.text}">${esc(t.fileDownloadOpt2Label)}</div>
+        <button class="filedl-disable-btn" data-url="${esc(NETFREE_DISABLE_GATE_WIKI)}" style="${S.btnBase}${S.btnDisable}" type="button">
+          ⊘ ${esc(isHe ? 'בטל התראה' : 'Disable')}
+        </button>
+      </div>
+    </div>
+  `;
+
+  card.querySelectorAll('.filedl-open-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url = btn.dataset.url;
+      if (url && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url });
+    });
+  });
+  card.querySelector('.filedl-disable-btn')?.addEventListener('click', () => {
+    const url = card.querySelector('.filedl-disable-btn').dataset.url;
+    if (url && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url });
+  });
 
   return card;
 }
@@ -402,12 +599,18 @@ function openTicketWindow(url) {
   }
 }
 
-function reqRowHtml(req) {
+function reqRowHtml(req, opts = {}) {
   const short = shortenUrl(req.url);
+  const openBtn = opts.isFileDl
+    ? `<button class="req-open-btn" data-url="${esc(req.url)}" title="${esc(T[lang].openFileDirect)}" aria-label="${esc(T[lang].openFileDirect)}">
+         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+       </button>`
+    : '';
   return `
     <div class="req-row">
       <span class="req-type">${esc(req.resourceType)}</span>
       <span class="req-url" title="${esc(req.url)}" dir="ltr">${esc(short)}</span>
+      ${openBtn}
       <button class="req-copy-btn" data-url="${esc(req.url)}" title="Copy URL">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
@@ -473,60 +676,125 @@ async function copyAll() {
   if (allUrls) await copyText(allUrls);
 }
 
-// Build a NetFree-ticket-ready subject + body covering ALL blocks on the
-// current page (across every blocked domain), grouped by block type.
-// Excludes harmless blocks unless the "show harmless" toggle is on.
-function buildTicketContent() {
-  const t      = T[lang];
-  const host   = pageHost();
+// Build a NetFree-ticket-ready subject + body. When `withUrlList` is true,
+// the body includes a grouped URL list of every blocked request — used as
+// a fallback when the traffic-recording upload fails. When false (the
+// default), the body is just intro + ask, because the recording link
+// carries the request data in a richer form.
+function buildTicketContent(withUrlList = false, focusGroup = null) {
+  const t    = T[lang];
+  const host = pageHost();
+
+  // Video-review focused ticket — used when the user clicks the
+  // ticket button on a video / file_type card. Short, direct body
+  // with the file URL(s) inline; the traffic recording link is
+  // appended later by prepareTicketContent. No "I'm using this
+  // site, here are console errors" boilerplate.
+  const focusKind = focusGroup ? ticketKindFor(focusGroup).type : null;
+  if (focusKind === 'video' && focusGroup) {
+    const subject = t.ticketVideoSubject(host);
+    const urls    = focusGroup.requests.map(r => r.url);
+    const linkLabel = urls.length > 1 ? t.ticketVideoLinksLabel : t.ticketVideoLinkLabel;
+    const urlBlock = urls.length === 1
+      ? `${linkLabel}: ${urls[0]}`
+      : `${linkLabel}:\n${urls.map(u => `  • ${u}`).join('\n')}`;
+    const body = `${t.ticketVideoIntro}\n\n${urlBlock}`;
+    return buildClipboard(subject, body);
+  }
+
+  // Generic site ticket — covers everything else.
+  const subject = t.ticketSubject(host);
+  let body;
+  if (withUrlList) {
+    const groups = blocks
+      .map(g => ({
+        ...g,
+        requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
+      }))
+      .filter(g => g.requests.length > 0);
+    const sections = groups.map(g => {
+      const label = (BLOCK_META[g.blockType] ?? BLOCK_META.unknown).label(t);
+      const urls  = g.requests.map(r => `  • ${r.url}`).join('\n');
+      return `[${label}] ${g.domain}\n${urls}`;
+    }).join('\n\n');
+    body = `${t.ticketIntro(host)}\n\n${sections}\n\n${t.ticketAsk}`;
+  } else {
+    body = `${t.ticketIntro(host)}\n\n${t.ticketAsk}`;
+  }
+  return buildClipboard(subject, body);
+}
+
+function buildClipboard(subject, body) {
+  const isHe = lang === 'he';
+  const subjLabel = isHe ? 'נושא' : 'Subject';
+  const bodyLabel = isHe ? 'תוכן הבקשה' : 'Request content';
+  const clipboard = `${subjLabel}: ${subject}\n\n${bodyLabel}:\n${body}`;
+  return { subject, body, clipboard };
+}
+
+// Stash the subject + body in chrome.storage.local so the netfree.link
+// content script can pick them up and auto-fill the ticket form fields,
+// and copy the same content to the clipboard as a paste fallback.
+// .local (not .session) because session defaults to TRUSTED_CONTEXTS
+// which excludes content scripts.
+// Build the final ticket subject + body for the current page, doing
+// the traffic-recording upload along the way. On upload success, body
+// is intro + recording link + ask; on failure, falls back to embedding
+// the grouped URL list. Returns { subject, body, clipboard } so the
+// caller can stash, copy, or both — all from one source of truth.
+async function prepareTicketContent(focusGroup = null) {
+  let url = null;
+  try {
+    url = await createTrafficRecordingUrl();
+  } catch (e) {
+    console.warn('[NetFree Inspector] traffic-recording upload failed:', e?.message || e);
+  }
+
+  // For video-focused tickets we always want the short body — the
+  // URL list fallback only makes sense for generic site tickets
+  // where the body lists every block on the page.
+  const isVideoFocus = focusGroup && ticketKindFor(focusGroup).type === 'video';
+  const { subject, body } = buildTicketContent(/* withUrlList */ !url && !isVideoFocus, focusGroup);
+
+  let finalBody = body;
+  if (url) {
+    const label = lang === 'he' ? 'הקלטת תעבורה' : 'Traffic recording';
+    finalBody = `${body}\n\n${label}: ${url}`;
+  }
+
+  return buildClipboard(subject, finalBody);
+}
+
+async function stashPendingTicket(focusGroup = null) {
+  const { subject, body, clipboard } = await prepareTicketContent(focusGroup);
+  try {
+    await chrome.storage.local.set({
+      pendingTicket: { subject, body, ts: Date.now() },
+    });
+  } catch {
+    // storage.local unavailable; the clipboard copy below still
+    // gives the user something to paste.
+  }
+  await copyText(clipboard, T[lang].contentCopied);
+}
+
+// Build & upload a NetFree-compatible traffic recording from the
+// currently visible blocks. Returns the netfree.link view URL on
+// success or null when there's nothing to upload.
+async function createTrafficRecordingUrl() {
+  if (!self.NF || typeof self.NF.buildTrafficRecording !== 'function') return null;
+
   const groups = blocks
     .map(g => ({
       ...g,
       requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
     }))
     .filter(g => g.requests.length > 0);
+  if (groups.length === 0) return null;
 
-  const subject = t.ticketSubject(host);
-
-  const sections = groups.map(g => {
-    const label = (BLOCK_META[g.blockType] ?? BLOCK_META.unknown).label(t);
-    const urls  = g.requests.map(r => `  • ${r.url}`).join('\n');
-    return `[${label}] ${g.domain}\n${urls}`;
-  }).join('\n\n');
-
-  const body = `${t.ticketIntro(host)}\n\n${sections}\n\n${t.ticketAsk}`;
-
-  // The clipboard payload is laid out so the user can paste once, or
-  // pick out subject vs. body if NetFree's form has separate fields.
-  const isHe = lang === 'he';
-  const subjLabel = isHe ? 'נושא' : 'Subject';
-  const bodyLabel = isHe ? 'תוכן הבקשה' : 'Request content';
-  const clipboard = `${subjLabel}: ${subject}\n\n${bodyLabel}:\n${body}`;
-
-  return { subject, body, clipboard };
-}
-
-// Copy the ticket content (subject + body) to the clipboard so the user
-// can paste it straight into the NetFree request form.
-async function copyTicketContent() {
-  const { clipboard } = buildTicketContent();
-  await copyText(clipboard, T[lang].contentCopied);
-}
-
-// Stash the subject + body in chrome.storage.local so the netfree.link
-// content script can pick them up and auto-fill the ticket form fields.
-// .local (not .session) because session defaults to TRUSTED_CONTEXTS
-// which excludes content scripts.
-async function stashPendingTicket() {
-  const { subject, body } = buildTicketContent();
-  try {
-    await chrome.storage.local.set({
-      pendingTicket: { subject, body, ts: Date.now() },
-    });
-  } catch {
-    // storage.local unavailable; the clipboard fallback still gives
-    // the user something to paste.
-  }
+  const arr = self.NF.buildTrafficRecording(groups);
+  if (!arr.length) return null;
+  return await self.NF.uploadTrafficRecording(arr);
 }
 
 // Copy a human-readable, shareable report (WhatsApp/email friendly).
@@ -597,10 +865,48 @@ function showToast(msg) {
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
-function makeTicketUrl(blockedUrl, referrer) {
+// NetFree's ticket URL has a `t=` parameter that varies by category:
+//   t=site   — generic site/block request (default)
+//   t=video  — submit a video for human review (NetFree's own
+//              "Send the video for review" button uses this)
+// Other categories likely exist (file/image) but aren't used yet.
+function makeTicketUrl(blockedUrl, referrer, type = 'site') {
   const u = encodeURIComponent(blockedUrl);
   const r = encodeURIComponent(referrer);
-  return `https://netfree.link/app/#/tickets/new?u=${u}&r=${r}&t=site&bi=`;
+  return `https://netfree.link/app/#/tickets/new?u=${u}&r=${r}&t=${encodeURIComponent(type)}&bi=`;
+}
+
+// Spot URLs that point at a video so we can offer NetFree's t=video
+// "Send video for review" flow instead of a generic site request.
+const VIDEO_HOST_RE = /(?:^|\.)(youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|twitch\.tv)$/i;
+const VIDEO_EXT_RE  = /\.(mp4|m4v|mov|webm|avi|mkv|flv|wmv|ogv)(\?|$)/i;
+function isVideoUrl(url) {
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  if (VIDEO_HOST_RE.test(u.hostname)) return true;
+  if (u.hostname === 'www.youtube.com' && u.pathname === '/watch') return true;
+  if (VIDEO_EXT_RE.test(u.pathname)) return true;
+  return false;
+}
+
+// Decide which ticket category + button label fit this group of
+// blocked requests.
+//   • Explicit video URLs (youtube/vimeo/.mp4 etc.) → NetFree's
+//     t=video flow.
+//   • file_type blocks (netfree_full_logo.svg with no .avif) are
+//     almost always videos NetFree's auto-filter couldn't classify
+//     — typically temp-CDN files from video editors. The human
+//     review path is via the attached traffic recording, so we use
+//     t=video and the "Send video for review" label too.
+//   • Everything else stays the generic site-request flow.
+function ticketKindFor(group) {
+  if (group.requests.some(r => isVideoUrl(r.url))) {
+    return { type: 'video', labelKey: 'sendVideoForReview' };
+  }
+  if (group.blockType === 'file_type') {
+    return { type: 'video', labelKey: 'sendVideoForReview' };
+  }
+  return { type: 'site', labelKey: 'openTicket' };
 }
 
 function pageHost() {

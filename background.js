@@ -16,6 +16,22 @@ const NETFREE_HOST = 'netfree.link';
 const BLOCK_CODE   = 418;
 
 // ─────────────────────────────────────────────────────────
+// Service-worker keep-alive
+// ─────────────────────────────────────────────────────────
+// MV3 service workers sleep after ~30 seconds of inactivity. Cold-
+// start can take long enough that a fast XHR completion fires *before*
+// our webRequest listener is re-attached — that's why the first
+// download attempt sometimes gets missed and the second one catches.
+// A periodic alarm fires often enough to reset the idle timer and
+// keep the SW warm. The alarm handler is a no-op; just being invoked
+// is what counts.
+const KEEPALIVE_ALARM = 'netfree-keepalive';
+chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === KEEPALIVE_ALARM) { /* no-op — keeps the SW awake */ }
+});
+
+// ─────────────────────────────────────────────────────────
 // Session storage helpers
 // (chrome.storage.session persists across SW restarts within
 //  the same browser session, unlike in-memory Maps)
@@ -108,13 +124,31 @@ function extractDomain(url) {
   try { return new URL(url).hostname; } catch { return url; }
 }
 
+// A 418 on an XHR/fetch/sub_frame/main_frame request whose URL looks
+// like a file download is almost always NetFree's "image-review" gate
+// blocking a programmatic download (the gate HTML can't render in an
+// XHR/fetch context, so the request just fails — user gets an empty
+// PDF). These deserve a different UX path than generic 3rd-party
+// blocks: instead of opening a ticket, suggest opening the URL in a
+// new tab (where the gate CAN render) or disabling the gate setting.
+const FILE_DOWNLOAD_TYPES = new Set(['xmlhttprequest', 'sub_frame', 'main_frame', 'object', 'other']);
+const FILE_EXT_RE  = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|7z|csv|txt|epub|odt|ods|odp|rtf|mp3|mp4|wav|mov|avi|webm|jpg|jpeg|png|gif|webp|svg)(\?|$)/i;
+const FILE_PATH_RE = /(^|\/)(pdf|download|file|attachment|export|invoice|statement|report|documents?)(\/|$|\?)/i;
+function looksLikeFileDownload(url, resourceType) {
+  if (!FILE_DOWNLOAD_TYPES.has(resourceType)) return false;
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  const p = u.pathname.toLowerCase();
+  return FILE_EXT_RE.test(p) || FILE_EXT_RE.test(u.search) || FILE_PATH_RE.test(p);
+}
+
 // ─────────────────────────────────────────────────────────
 // webRequest — observe all completed requests
 // ─────────────────────────────────────────────────────────
 
 chrome.webRequest.onCompleted.addListener(
   async (details) => {
-    const { tabId, statusCode, url, type, timeStamp, initiator } = details;
+    const { tabId, statusCode, url, type, timeStamp, initiator, method, ip } = details;
     if (tabId === -1) return; // background / extension-internal
 
     // ── 1. NetFree block signal: HTTP 418 ──────────────────────────────────
@@ -122,20 +156,49 @@ chrome.webRequest.onCompleted.addListener(
       const data   = await getTabData(tabId);
       const domain = extractDomain(url);
 
-      let group = data.blocks.find(g => g.domain === domain);
+      // File downloads get their own group so we can show a different
+      // UX (open-directly + disable-gate) without mixing them with
+      // generic 3rd-party blocks on the same domain.
+      const isFileDl = looksLikeFileDownload(url, type);
+
+      // Infer blockType at creation time from the resource type.
+      // sub_frame / media / object requests never trigger the block-
+      // page asset detection (no top-level navigation, no .avif image
+      // ever loads), so they'd otherwise be stuck as 'unknown' forever.
+      // These are nearly always video/file content (embedded players,
+      // <video src> elements, temp-CDN files from editors like Adobe
+      // Express). Classifying them as file_type up front routes them
+      // through the video-review UX with a t=video ticket.
+      let initialBlockType = 'unknown';
+      if (isFileDl) {
+        initialBlockType = 'file_download';
+      } else if (type === 'sub_frame' || type === 'media' || type === 'object') {
+        initialBlockType = 'file_type';
+      }
+
+      const groupKey = `${domain}|${initialBlockType}`;
+
+      let group = data.blocks.find(g => g.groupKey === groupKey);
       if (!group) {
-        group = { domain, blockType: 'unknown', requests: [] };
+        group = {
+          domain,
+          groupKey,
+          blockType: initialBlockType,
+          requests: [],
+        };
         data.blocks.push(group);
       }
 
       group.requests.push({
         url,
+        method:       method ?? 'GET',
+        ip:           ip ?? '',
         resourceType: type,
-        timestamp: timeStamp,
-        initiator: initiator ?? '',
-        harmless: self.isHarmlessUrl
-                 ? self.isHarmlessUrl(url)
-                 : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
+        timestamp:    timeStamp,
+        initiator:    initiator ?? '',
+        harmless:     self.isHarmlessUrl
+                       ? self.isHarmlessUrl(url)
+                       : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
       });
 
       await setTabData(tabId, data);
@@ -152,9 +215,14 @@ chrome.webRequest.onCompleted.addListener(
       const data = await getTabData(tabId);
       if (!data.blocks.length) return;
 
-      // Target the main-frame block group (or fall back to the latest group)
+      // Target the main-frame block group (or fall back to the latest
+      // group). Skip file_download groups — those are an XHR/file UX
+      // case, not a block-page-rendering case.
       const target =
-        data.blocks.find(g => g.requests.some(r => r.resourceType === 'main_frame'))
+        data.blocks.find(g =>
+          g.blockType !== 'file_download' &&
+          g.requests.some(r => r.resourceType === 'main_frame'))
+        ?? [...data.blocks].reverse().find(g => g.blockType !== 'file_download')
         ?? data.blocks[data.blocks.length - 1];
 
       if (url.includes('block.avif')) {

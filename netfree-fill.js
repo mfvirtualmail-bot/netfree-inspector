@@ -31,6 +31,20 @@
     try { await chrome.storage.local.remove(STORAGE_KEY); } catch {}
   }
 
+  // Detect Hebrew (or Arabic) characters in a string. NetFree's
+  // ticket textarea defaults to LTR, so Hebrew content ends up with
+  // punctuation on the wrong side and mixed Hebrew/Latin runs look
+  // scrambled. When the content is RTL, force the element direction.
+  const RTL_RE = /[֐-׿؀-ۿ܀-ݏיִ-ﻼ]/;
+  function applyDirection(el, value) {
+    if (!el || typeof value !== 'string') return;
+    if (RTL_RE.test(value)) {
+      el.setAttribute('dir', 'rtl');
+      el.style.direction = 'rtl';
+      el.style.textAlign = 'right';
+    }
+  }
+
   // Set an <input>/<textarea> value the way Angular's ngModel observer
   // will react to: focus → use the prototype's native setter →
   // dispatch input + change → blur. The native setter is required
@@ -47,6 +61,7 @@
     el.dispatchEvent(new Event('input',  { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     try { el.blur(); } catch {}
+    applyDirection(el, value);
     return el.value === value;
   }
 
