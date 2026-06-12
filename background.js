@@ -32,6 +32,167 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // ─────────────────────────────────────────────────────────
+// Full-traffic recording (record-on-demand)
+// ─────────────────────────────────────────────────────────
+// The always-on block tracking below only stores 418s — enough for the
+// popup's block list, but NOT enough for a recording NetFree support can
+// navigate. A real recording shows the *whole* page load (accepted +
+// blocked) so the reviewer can click the blocked row themselves.
+//
+// Capturing every request on every tab all the time would be heavy and
+// privacy-invasive, so this is opt-in: "Reload & Record" starts a session
+// for one tab, reloads it (capturing from the very first request), and we
+// log all of its traffic until the recording is built or the tab closes.
+//
+// State is held in memory for speed (no async get/set race on the hot
+// webRequest path) and mirrored to storage.session so a service-worker
+// restart mid-recording doesn't lose the buffer.
+const recTabs     = new Set();   // tabIds with an active recording
+const recSessions = new Map();   // tabId -> { startTime, host, reqs: Map<reqId,obj> }
+const REC_KEY     = (tabId) => `rec_${tabId}`;
+const REC_MAX     = 3000;        // hard cap on requests per session
+
+// Rebuild in-memory recording state after a service-worker restart.
+// The promise itself is cached (not a boolean) so a caller that lands
+// while hydration is still in flight awaits the same read instead of
+// short-circuiting on empty maps; a failed read resets the cache so the
+// next caller retries.
+let hydratePromise = null;
+function hydrateRecordings() {
+  if (!hydratePromise) {
+    hydratePromise = (async () => {
+      try {
+        const all = await chrome.storage.session.get(null);
+        for (const [k, v] of Object.entries(all)) {
+          if (!k.startsWith('rec_') || !v || !v.active) continue;
+          const tabId = Number(k.slice(4));
+          recTabs.add(tabId);
+          const reqs = new Map((v.reqs || []).map(r => [r.id, r]));
+          recSessions.set(tabId, { startTime: v.startTime || 0, host: v.host || '', reqs });
+        }
+      } catch {
+        hydratePromise = null; // retry on next call
+      }
+    })();
+  }
+  return hydratePromise;
+}
+hydrateRecordings();
+
+// Debounced persistence — recording is short-lived and the keep-alive
+// alarm keeps the SW warm meanwhile, so at most ~1s of tail traffic is
+// ever at risk on an unexpected restart.
+const recPersistTimers = new Map();
+function schedulePersist(tabId) {
+  if (recPersistTimers.has(tabId)) return;
+  recPersistTimers.set(tabId, setTimeout(() => {
+    recPersistTimers.delete(tabId);
+    persistRecording(tabId);
+  }, 700));
+}
+async function persistRecording(tabId) {
+  const s = recSessions.get(tabId);
+  if (!s) return;
+  try {
+    await chrome.storage.session.set({
+      [REC_KEY(tabId)]: {
+        active: true,
+        startTime: s.startTime,
+        host: s.host || '',
+        reqs: [...s.reqs.values()],
+      },
+    });
+  } catch { /* over quota or gone — in-memory copy still serves the build */ }
+}
+
+function recHeader(headers, name) {
+  if (!headers) return undefined;
+  const h = headers.find(x => x.name && x.name.toLowerCase() === name);
+  return h ? h.value : undefined;
+}
+
+// onBeforeRequest — record the start of every request on a recording tab.
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    const { tabId, requestId, url, method, type, timeStamp } = details;
+    if (!recTabs.has(tabId)) return;
+    if (url.includes(NETFREE_HOST)) return;          // skip filter's own UI
+    if (!/^https?:/i.test(url)) return;              // skip data:/blob:/etc
+    const s = recSessions.get(tabId);
+    if (!s || s.reqs.size >= REC_MAX) return;
+    s.reqs.set(requestId, {
+      id:        requestId,
+      url,
+      host:      extractDomain(url),
+      method:    method || 'GET',
+      type,
+      startTime: timeStamp,
+      endTime:   timeStamp,
+      blocked:   false,
+    });
+  },
+  { urls: ['<all_urls>'] },
+);
+
+// onCompleted — finalize a recorded request (status, ip, content meta).
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    if (!recTabs.has(details.tabId)) return;
+    const s = recSessions.get(details.tabId);
+    if (!s) return;
+    const r = s.reqs.get(details.requestId);
+    if (!r) return;
+    r.endTime       = details.timeStamp;
+    r.statusCode    = details.statusCode;
+    r.ip            = details.ip || '';
+    r.blocked       = details.statusCode === BLOCK_CODE;
+    r.contentType   = recHeader(details.responseHeaders, 'content-type');
+    const len       = recHeader(details.responseHeaders, 'content-length');
+    if (len != null && !Number.isNaN(Number(len))) r.contentLength = Number(len);
+    schedulePersist(details.tabId);
+  },
+  { urls: ['<all_urls>'] },
+  ['responseHeaders'],
+);
+
+// onErrorOccurred — a request that never completed (DNS fail, reset,
+// aborted). Keep it in the log as a started-but-unfinished row; the
+// builder renders it without a response section.
+chrome.webRequest.onErrorOccurred.addListener(
+  (details) => {
+    if (!recTabs.has(details.tabId)) return;
+    const s = recSessions.get(details.tabId);
+    if (!s) return;
+    const r = s.reqs.get(details.requestId);
+    if (!r) return;
+    r.endTime = details.timeStamp;
+    r.error   = details.error;
+    schedulePersist(details.tabId);
+  },
+  { urls: ['<all_urls>'] },
+);
+
+async function startRecording(tabId, host) {
+  recTabs.add(tabId);
+  recSessions.set(tabId, { startTime: Date.now(), host: host || '', reqs: new Map() });
+  await persistRecording(tabId);
+}
+
+async function stopRecording(tabId) {
+  recTabs.delete(tabId);
+  recSessions.delete(tabId);
+  const tm = recPersistTimers.get(tabId);
+  if (tm) { clearTimeout(tm); recPersistTimers.delete(tabId); }
+  try { await chrome.storage.session.remove(REC_KEY(tabId)); } catch { /* gone */ }
+}
+
+function getRecording(tabId) {
+  const s = recSessions.get(tabId);
+  if (!s) return { active: false, requests: [] };
+  return { active: true, requests: [...s.reqs.values()] };
+}
+
+// ─────────────────────────────────────────────────────────
 // Session storage helpers
 // (chrome.storage.session persists across SW restarts within
 //  the same browser session, unlike in-memory Maps)
@@ -162,18 +323,17 @@ chrome.webRequest.onCompleted.addListener(
       const isFileDl = looksLikeFileDownload(url, type);
 
       // Infer blockType at creation time from the resource type.
-      // sub_frame / media / object requests never trigger the block-
-      // page asset detection (no top-level navigation, no .avif image
-      // ever loads), so they'd otherwise be stuck as 'unknown' forever.
-      // These are nearly always video/file content (embedded players,
-      // <video src> elements, temp-CDN files from editors like Adobe
-      // Express). Classifying them as file_type up front routes them
-      // through the video-review UX with a t=video ticket.
+      // Don't guess "video" from the resource type. sub_frame/media/
+      // object blocks were previously force-classified as file_type and
+      // routed through a video-review UX — but most aren't video (iframes
+      // are ads/widgets/embeds), so that mislabeled the block AND pointed
+      // the ticket at the wrong thing. We now leave them generic
+      // ('unknown' = "something on this page isn't loading") and only
+      // treat a block as video when there's real evidence (an actual
+      // video host/extension — see ticketKindFor in popup.js).
       let initialBlockType = 'unknown';
       if (isFileDl) {
         initialBlockType = 'file_download';
-      } else if (type === 'sub_frame' || type === 'media' || type === 'object') {
-        initialBlockType = 'file_type';
       }
 
       const groupKey = `${domain}|${initialBlockType}`;
@@ -258,6 +418,20 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   await clearTabData(details.tabId);
   safeTabCall(chrome.action.setBadgeText({ tabId: details.tabId, text: '' }));
   await resetIcon(details.tabId);
+
+  // A recording session is scoped to the site it was started on. The
+  // "Reload & Record" reload (same host) keeps recording; navigating the
+  // tab to a different site ends it — otherwise one record click would
+  // silently capture the tab's browsing history across sites, and a later
+  // ticket would upload unrelated traffic to NetFree.
+  await hydrateRecordings();
+  const s = recSessions.get(details.tabId);
+  if (s) {
+    const newHost = extractDomain(details.url);
+    if (s.host && newHost && newHost !== s.host) {
+      await stopRecording(details.tabId);
+    }
+  }
 });
 
 // ─────────────────────────────────────────────────────────
@@ -266,6 +440,7 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   await clearTabData(tabId);
+  await stopRecording(tabId);
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -307,6 +482,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       } else {
         reply({ ok: false });
       }
+      return true;
+
+    // ── Full-traffic recording ──────────────────────────────────────
+    case 'START_RECORDING':
+      startRecording(msg.tabId, msg.host).then(() => reply({ ok: true }));
+      return true;
+
+    case 'STOP_RECORDING':
+      stopRecording(msg.tabId).then(() => reply({ ok: true }));
+      return true;
+
+    case 'GET_RECORDING':
+      // Ensure a post-restart session is restored before answering.
+      hydrateRecordings().then(() => reply(getRecording(msg.tabId)));
       return true;
   }
 });

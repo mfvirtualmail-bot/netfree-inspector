@@ -23,3 +23,6 @@ build/
 .env
 .env.*
 !.env.example
+
+# Local research scratch (real recordings — contain account identity data, never commit)
+.local-research/

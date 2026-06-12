@@ -1,66 +1,168 @@
 // NetFree Inspector — traffic-recording builder + uploader.
 //
-// Hybrid mode: real chrome.webRequest data + a single synthetic marker
-// event so reviewers can see these rows came from the extension, not
-// from NetFree's on-device filter pipeline.
+// Builds a NetFree-compatible traffic recording from traffic the
+// extension captured via chrome.webRequest, then uploads it so the user
+// gets a real netfree.link/app/#/tools/traffic/view/<hash> URL.
+//
+// IMPORTANT — what this is and isn't:
+// A real NetFree recording is a passive capture of the on-device
+// filter's own event stream (wss://eeapi.internal.netfree.link/traffic/
+// ws-log), so it contains socket/TLS rows and the filter's true internal
+// block categories. That stream is unreachable from a normal extension —
+// which is exactly why this extension exists: it serves users filtered
+// at the network level who can't run NetFree's own recorder. So this is
+// a *reconstruction* from chrome.webRequest metadata, dressed in the same
+// wire format. It reproduces the request rows (accepted + blocked) the
+// viewer needs, but not the filter-internal socket/category events.
 //
 // Wire format (PUT body, content-type text/plain, JSON.stringify of a
-// bare 2-D array):
-//   [
-//     [ {action,id,time,...}, ... ],   // one inner array per request
-//     [ {action,id,time,...}, ... ],
-//   ]
+// bare 2-D array). Each inner array is one request, all its events share
+// one numeric id, exactly how NetFree groups its own ws-log stream:
+//   [ [ {action,id,time,...}, ... ], [ ... ] ]
 // Server returns { key: "<hash>" } → view URL is
 //   https://netfree.link/app/#/tools/traffic/view/<key>
 
 const NF_SAVE_URL    = 'https://netfree.link/api/user/save-traffic-record';
 const NF_VIEW_PREFIX = 'https://netfree.link/app/#/tools/traffic/view/';
-const NF_MARKER_VER  = '1.4.9';
 
-// Mirrors the real NetFree filter's "denied" sequence so the viewer
-// flags the row with the orange "Blocked" tag and populates the Block-
-// reason column. The two load-bearing pieces are:
-//   1. map:filter:<reason>  → populates Block-reason column
-//   2. {action:"block:deny", block:"deny"} → drives the Blocked tag
-//      (the separate top-level `block` field is what the viewer reads,
-//      not the action string)
-// Plus a single synthetic marker (captured-by-extension::…) so anyone
-// reading the recording can see these rows came from us, not the filter.
-function buildRequestEvents(req, blockType, domain, id) {
-  const baseTime = (typeof req.timestamp === 'number') ? req.timestamp : Date.now();
-  const method   = (req.method || 'GET').toUpperCase();
-  let host;
-  try { host = new URL(req.url).hostname; } catch { host = domain || req.url; }
-
-  // Monotonic sub-ms offsets so the viewer sorts events stably within one id.
-  let t = baseTime;
-  const step = () => { t += 0.001; return t; };
-
-  return [
-    { action: `start:${id}, parent:0`,                                          id, time: step() },
-    { action: `captured-by-extension::NetFree-Inspector::v${NF_MARKER_VER}`,    id, time: step() },
-    { action: `request.method(${method}).bodyType(0)`,                          id, time: step() },
-    ...(req.ip ? [{ action: `tproxy::${req.ip}:`,                               id, time: step() }] : []),
-    { action: `headers.host::${host}`,                                          id, time: step(), url: req.url },
-    { action: `request`,                                                        id, time: step() },
-    { action: `inspector-detected-block::${blockType || 'unknown'}::${domain}`, id, time: step() },
-    { action: `map:filter:חסום`,                            id, time: step() },
-    { action: `Request:filter:deny`,                                            id, time: step() },
-    { action: `block:deny`, block: 'deny',                                      id, time: step() },
-    { action: `send-response-to-client`,                                        id, time: step() },
-    { action: `finish`, end: true,                                              id, time: step() },
-  ];
+// How a blocked request is represented, keyed by the extension's own
+// block-type classification (which it reads from NetFree's block-page
+// images — see background.js). We only assert a deny/חסום reason when we
+// actually saw the blacklist signal; everything we can't positively
+// classify is reported as the honest `block:unknown` (which is also what
+// NetFree itself emits for filetype / not-yet-categorised blocks), rather
+// than fabricating a "denied" reason we don't have evidence for.
+//   mapFilter  → drives the viewer's Block-reason column (Hebrew category)
+//   blockField → the load-bearing top-level `block` field the viewer reads
+//                to paint the orange "Blocked" tag
+function blockRepresentation(blockType) {
+  switch (blockType) {
+    case 'blacklisted':
+      return { reqFilter: 'deny',    mapFilter: 'חסום', blockField: 'deny' };
+    case 'user_settings':
+      // Blocked by the user's own settings — still a hard deny.
+      return { reqFilter: 'deny',    mapFilter: 'חסום', blockField: 'deny' };
+    case 'not_whitelisted':
+    case 'file_type':
+    case 'file_download':
+    case 'unknown':
+    default:
+      // No positive category signal → honest "unknown".
+      return { reqFilter: 'unknown', mapFilter: null,   blockField: 'unknown' };
+  }
 }
 
-function buildTrafficRecording(groups) {
-  const out = [];
-  let counter = (Date.now() % 100000000) + Math.floor(Math.random() * 1000);
-  for (const g of groups || []) {
-    for (const r of (g.requests || [])) {
-      out.push(buildRequestEvents(r, g.blockType, g.domain, counter++));
+function hostOf(url, fallback) {
+  try { return new URL(url).hostname; } catch { return fallback || url; }
+}
+
+// Build the event array for one captured request. `index` becomes the
+// per-row `count:N`. Times: request-phase events anchor at startTime,
+// response-phase events at endTime, with sub-ms steps so the viewer sorts
+// events stably within the row.
+function buildRequestEvents(req, index) {
+  const id      = Number(req.id) || index + 1;
+  const host    = req.host || hostOf(req.url, '');
+  const method  = (req.method || 'GET').toUpperCase();
+  const start   = (typeof req.startTime === 'number') ? req.startTime : 0;
+  const end     = (typeof req.endTime === 'number' && req.endTime >= start) ? req.endTime : start;
+
+  let rt = start;
+  const reqStep = () => { rt += 0.001; return rt; };
+  // Response-phase times anchor at endTime but must never rewind behind
+  // the request-phase steps (possible when end-start is under a few µs).
+  let pt = end;
+  const respStep = () => { pt = Math.max(pt, rt) + 0.001; return pt; };
+
+  const ev = [];
+  ev.push({ action: `start:${id}, parent:0`,                     id, time: reqStep() });
+  ev.push({ action: `request.method(${method}).bodyType(1)`,    id, time: reqStep() });
+  ev.push({ action: `count:${index}`,                           id, time: reqStep() });
+  ev.push({ action: `headers.host::${host}`,                    id, time: reqStep(), url: req.url });
+  ev.push({ action: `request`,                                  id, time: reqStep() });
+  ev.push({ action: `Request:filter:defaults`,                  id, time: reqStep() });
+  ev.push({ action: `Request:filter:user`,                      id, time: reqStep() });
+
+  if (req.blocked) {
+    const rep = blockRepresentation(req.blockType);
+    if (rep.mapFilter) {
+      ev.push({ action: `map:filter:${rep.mapFilter}`,          id, time: reqStep() });
     }
+    ev.push({ action: `Request:filter:${rep.reqFilter}`,        id, time: reqStep() });
+    ev.push({ action: `block:${rep.blockField}`, block: rep.blockField, id, time: reqStep() });
+    ev.push({ action: `send-response-to-client`,                id, time: reqStep() });
+    ev.push({ action: `finish`, end: true,                      id, time: reqStep() });
+    return ev;
   }
-  return out;
+
+  // No observed response — the request was still in flight when the
+  // recording was built, or it failed without an HTTP response (DNS
+  // failure, connection reset, abort). We never saw a status, so we must
+  // not invent one: real NetFree recordings contain rows that simply
+  // stop mid-flight with no finish event, and that is the honest (and
+  // format-compatible) rendering here too.
+  if (typeof req.statusCode !== 'number') {
+    return ev;
+  }
+
+  // Accepted request — we observed the real status/headers.
+  const status = req.statusCode;
+  const bytes  = (typeof req.contentLength === 'number') ? req.contentLength : 0;
+  ev.push({ action: `return-next`,                              id, time: reqStep() });
+  ev.push({ action: `source-request::socket-server::reuse`,     id, time: reqStep() });
+  ev.push({ action: `sourceResponse.statusCode(${status}).bodyType(1)`, id, time: respStep() });
+  const respEv = { action: `response`, id, time: respStep() };
+  if (req.contentType) respEv['content-type'] = req.contentType;
+  ev.push(respEv);
+  ev.push({ action: `Response:filter:defaults`,                 id, time: respStep() });
+  ev.push({ action: `Response:filter:user`,                     id, time: respStep() });
+  ev.push({ action: `return-accept`,                            id, time: respStep() });
+  ev.push({ action: `ResponseHeadersToClient.bodyType:1`,       id, time: respStep() });
+  ev.push({ action: `response.write(${bytes})`,                 id, time: respStep() });
+  ev.push({ action: `finish`, end: true,                        id, time: respStep() });
+  return ev;
+}
+
+// Accepts the captured-traffic array (preferred) OR the legacy block-group
+// shape, and returns the 2-D recording array.
+//
+//   captured request: { id, url, host, method, type, startTime, endTime,
+//                       statusCode, ip, contentType, contentLength,
+//                       blocked, blockType }
+//   legacy group:     { domain, blockType, requests: [{url, method, ip,
+//                       timestamp, ...}] }  → flattened to blocked requests
+function buildTrafficRecording(input) {
+  const list = normalizeInput(input);
+  // Stable chronological order so the recording reads start-to-finish.
+  list.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+  return list.map((req, i) => buildRequestEvents(req, i));
+}
+
+function normalizeInput(input) {
+  if (!Array.isArray(input)) return [];
+  // Legacy: array of { domain, blockType, requests: [...] } groups.
+  if (input.length && input[0] && Array.isArray(input[0].requests)) {
+    const out = [];
+    for (const g of input) {
+      for (const r of (g.requests || [])) {
+        out.push({
+          id:         r.id,
+          url:        r.url,
+          host:       g.domain || hostOf(r.url, ''),
+          method:     r.method,
+          type:       r.resourceType,
+          startTime:  r.timestamp || 0,
+          endTime:    r.timestamp || 0,
+          ip:         r.ip,
+          blocked:    true,
+          blockType:  g.blockType || 'unknown',
+        });
+      }
+    }
+    return out;
+  }
+  // Preferred: already a flat capture list.
+  return input.filter(Boolean);
 }
 
 async function uploadTrafficRecording(arr) {
@@ -87,6 +189,13 @@ async function uploadTrafficRecording(arr) {
   return NF_VIEW_PREFIX + json.key;
 }
 
-self.NF = self.NF || {};
-self.NF.buildTrafficRecording  = buildTrafficRecording;
-self.NF.uploadTrafficRecording = uploadTrafficRecording;
+// Exposed for Node unit-testing; harmless in the browser.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { buildTrafficRecording, blockRepresentation, normalizeInput };
+}
+
+if (typeof self !== 'undefined') {
+  self.NF = self.NF || {};
+  self.NF.buildTrafficRecording  = buildTrafficRecording;
+  self.NF.uploadTrafficRecording = uploadTrafficRecording;
+}

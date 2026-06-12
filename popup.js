@@ -17,8 +17,8 @@ const T = {
     blacklisted:      '🚫 חסום — האתר ברשימה השחורה',
     notWhitelisted:   '⏳ לא ברשימה הלבנה — ממתין לאישור',
     userSettings:     '⚙️ חסום בהגדרות אישיות',
-    fileType:         '📹 וידאו חסום — דרושה בדיקה אנושית',
-    fileTypeSub:      'הסינון האוטומטי של נט פרי לא הצליח לזהות את הקובץ (בד"כ סרטון בעורך וידאו או באחסון זמני). הקלטת התעבורה שמצורפת לבקשה מאפשרת לנציג נט פרי לצפות בסרטון ולבדוק אותו ידנית.',
+    fileType:         '📄 קובץ חסום — דרושה בדיקה ידנית',
+    fileTypeSub:      'הסינון האוטומטי של נט פרי לא הצליח לסווג את הקובץ. הקלטת התעבורה שמצורפת לבקשה מאפשרת לנציג נט פרי לבדוק אותו ידנית.',
     fileDownload:     '⚠️ בעיה בהורדת קובץ',
     fileDownloadProblem: 'הורדה אוטומטית של קובץ נחסמה ע"י "התראת שיבוש קבצים" של נט פרי. הקובץ שירדת ריק או פגום.',
     fileDownloadOptions: 'יש שתי דרכים לפתור:',
@@ -43,7 +43,8 @@ const T = {
     showHarmless:     'הצג חסימות פרסומות/מעקב',
     hideHarmless:     'הסתר חסימות פרסומות/מעקב',
     ticketSubject:    (host) => `בעיה באתר ${host}`,
-    ticketIntro:      (host) => `שלום,\nאני מנסה להשתמש באתר ${host} והוא אינו עובד כראוי.\nבבדיקה ב-console של הדפדפן נמצא שהבקשות הבאות נחסמות על ידי נט פרי:`,
+    ticketIntro:      (host) => `שלום,\nאני מנסה להשתמש באתר ${host} ומשהו בדף אינו נטען כראוי.`,
+    ticketIntroList:  'בבדיקה ב-console של הדפדפן נמצא שהבקשות הבאות נחסמות על ידי נט פרי:',
     ticketAsk:        'אבקש לבדוק ולאשר את החסימות הרלוונטיות כדי שהאתר יוכל לפעול תקין. תודה רבה.',
     ticketVideoSubject:    (host) => `בקשת בדיקת וידאו - ${host}`,
     ticketVideoIntro:      'שלום,\nאני רוצה לצפות בסרטון הבא. אבקש לבדוק ולאשר אותו. תודה רבה.',
@@ -63,8 +64,8 @@ const T = {
     blacklisted:      '🚫 Blacklisted — explicitly blocked',
     notWhitelisted:   '⏳ Not whitelisted — pending review',
     userSettings:     '⚙️ Blocked by personal settings',
-    fileType:         '📹 Video block — manual review required',
-    fileTypeSub:      'NetFree\'s automatic filter couldn\'t classify this file (typically a video from an editor or temp CDN). The traffic recording attached to your request lets a NetFree agent watch the video and review it manually.',
+    fileType:         '📄 File blocked — manual review required',
+    fileTypeSub:      'NetFree\'s automatic filter couldn\'t classify this file. The traffic recording attached to your request lets a NetFree agent review it manually.',
     fileDownload:     '⚠️ Download problem',
     fileDownloadProblem: 'An automatic file download was blocked by NetFree\'s file-distortion warning. The file you got is empty or broken.',
     fileDownloadOptions: 'Two ways to fix this:',
@@ -89,7 +90,8 @@ const T = {
     showHarmless:     'Show ad / tracker blocks',
     hideHarmless:     'Hide ad / tracker blocks',
     ticketSubject:    (host) => `Problem with website ${host}`,
-    ticketIntro:      (host) => `Hello,\nI'm trying to use the website ${host} and it isn't working properly.\nWhen checking the browser console I found that the following requests are being blocked by NetFree:`,
+    ticketIntro:      (host) => `Hello,\nI'm trying to use the website ${host} and something on the page isn't loading correctly.`,
+    ticketIntroList:  'When checking the browser console I found that the following requests are being blocked by NetFree:',
     ticketAsk:        'Please review and whitelist the relevant requests so the site can work correctly. Thank you.',
     ticketVideoSubject:    (host) => `Video review request — ${host}`,
     ticketVideoIntro:      'Hello,\nI would like to watch the following video. Please review and approve it. Thank you.',
@@ -666,6 +668,14 @@ function detectInitialLang() {
 // ─────────────────────────────────────────────
 async function reloadTab() {
   if (tabId !== null) {
+    // Start a full-traffic recording session *before* reloading so the
+    // reload's very first request is captured — that's what makes the
+    // recording a complete page load, not just the blocks we happened to
+    // see after the fact. The host scopes the session: navigating the tab
+    // to a different site ends it (see background.js).
+    try {
+      await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId, host: pageHost() });
+    } catch { /* background asleep; recording just won't be full this time */ }
     await chrome.tabs.reload(tabId);
     window.close();
   }
@@ -717,7 +727,7 @@ function buildTicketContent(withUrlList = false, focusGroup = null) {
       const urls  = g.requests.map(r => `  • ${r.url}`).join('\n');
       return `[${label}] ${g.domain}\n${urls}`;
     }).join('\n\n');
-    body = `${t.ticketIntro(host)}\n\n${sections}\n\n${t.ticketAsk}`;
+    body = `${t.ticketIntro(host)}\n${t.ticketIntroList}\n\n${sections}\n\n${t.ticketAsk}`;
   } else {
     body = `${t.ticketIntro(host)}\n\n${t.ticketAsk}`;
   }
@@ -784,17 +794,63 @@ async function stashPendingTicket(focusGroup = null) {
 async function createTrafficRecordingUrl() {
   if (!self.NF || typeof self.NF.buildTrafficRecording !== 'function') return null;
 
-  const groups = blocks
-    .map(g => ({
-      ...g,
-      requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
-    }))
-    .filter(g => g.requests.length > 0);
-  if (groups.length === 0) return null;
+  // Prefer the full-traffic recording session captured by "Reload &
+  // Record" — it has the whole page load (accepted + blocked), which is
+  // what lets NetFree support navigate the recording themselves.
+  let rec = null;
+  try {
+    rec = await chrome.runtime.sendMessage({ type: 'GET_RECORDING', tabId });
+  } catch { /* fall through to the blocks-only fallback */ }
 
-  const arr = self.NF.buildTrafficRecording(groups);
-  if (!arr.length) return null;
-  return await self.NF.uploadTrafficRecording(arr);
+  let arr = null;
+  let usedFullCapture = false;
+  if (rec && rec.active && Array.isArray(rec.requests) && rec.requests.length) {
+    usedFullCapture = true;
+    // The recording layer only knows blocked-vs-not (from the 418). Pull
+    // the richer block-type classification (which the always-on tracker
+    // derived from NetFree's block page) across, so a blacklisted block
+    // reads "Blocked/חסום" while everything else stays the honest
+    // "Undefined". Exact URL match first; same-host match only as a
+    // fallback (a host can mix block types, so URL wins). Accepted
+    // requests carry no block type.
+    const blockTypeByUrl  = {};
+    const blockTypeByHost = {};
+    for (const g of blocks) {
+      for (const r of g.requests) {
+        blockTypeByUrl[r.url] = g.blockType;
+        try { blockTypeByHost[new URL(r.url).hostname] = g.blockType; } catch { /* skip */ }
+      }
+    }
+    const reqs = rec.requests.map(r => ({
+      ...r,
+      blockType: r.blocked
+        ? (blockTypeByUrl[r.url] || blockTypeByHost[r.host] || 'unknown')
+        : undefined,
+    }));
+    arr = self.NF.buildTrafficRecording(reqs);
+  } else {
+    // Fallback: no recording session (user didn't reload-record). Build
+    // from the blocked list we have — better than nothing.
+    const groups = blocks
+      .map(g => ({
+        ...g,
+        requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
+      }))
+      .filter(g => g.requests.length > 0);
+    if (groups.length === 0) return null;
+    arr = self.NF.buildTrafficRecording(groups);
+  }
+
+  if (!arr || !arr.length) return null;
+  const url = await self.NF.uploadTrafficRecording(arr);
+
+  // The session served its purpose — end it so the capture doesn't keep
+  // accumulating (and get re-uploaded) after the ticket is filed. A new
+  // "Reload & Record" starts a fresh one.
+  if (usedFullCapture) {
+    try { await chrome.runtime.sendMessage({ type: 'STOP_RECORDING', tabId }); } catch { /* ok */ }
+  }
+  return url;
 }
 
 // Copy a human-readable, shareable report (WhatsApp/email friendly).
@@ -900,10 +956,11 @@ function isVideoUrl(url) {
 //     t=video and the "Send video for review" label too.
 //   • Everything else stays the generic site-request flow.
 function ticketKindFor(group) {
+  // Only the real-evidence path counts as video now: an actual video host
+  // or file extension. We no longer infer "video" from file_type /
+  // sub_frame / media block classes — those default to a generic site
+  // request ("something on this page isn't loading").
   if (group.requests.some(r => isVideoUrl(r.url))) {
-    return { type: 'video', labelKey: 'sendVideoForReview' };
-  }
-  if (group.blockType === 'file_type') {
     return { type: 'video', labelKey: 'sendVideoForReview' };
   }
   return { type: 'site', labelKey: 'openTicket' };
