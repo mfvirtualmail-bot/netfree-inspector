@@ -128,6 +128,32 @@
     tryFill().catch(() => {});
   }
 
+  // ── Block-page code reader ───────────────────────────────────────────
+  // When a request is blocked, the browser renders NetFree's block page
+  // (netfree.link/block/) inside the blocked origin — usually as an iframe,
+  // which is why this content script runs in all_frames. Its URL fragment
+  // holds the authoritative reason, e.g.
+  //     #{"block":"deny","page_info":{"url":"https:%2F%2F…"}}
+  // Reading it straight from the hash (exactly what NetFree's own block
+  // page does) is the most reliable code source for any block that renders
+  // a page — no re-fetch, no Sec-Fetch ambiguity. Sub-resource blocks
+  // (media/ping/xhr) don't render a page; those still rely on the SW fetch.
+  function reportBlockPageCode() {
+    if (!/\/block\/?$/.test(location.pathname)) return;
+    const raw = (location.hash || '').replace(/^#/, '');
+    if (!raw) return;
+    let json = null;
+    try { json = JSON.parse(decodeURIComponent(raw)); }
+    catch { try { json = JSON.parse(raw); } catch { return; } }
+    if (!json || typeof json.block !== 'string') return;
+    let url = json.page_info && json.page_info.url;
+    if (url) { try { url = decodeURIComponent(url); } catch {} }
+    try {
+      chrome.runtime.sendMessage({ type: 'BLOCK_PAGE_CODE', url: url || '', code: json.block });
+    } catch { /* SW asleep / context gone — re-fetch path still covers it */ }
+  }
+  reportBlockPageCode();
+
   startLoop();
 
   // Re-arm on SPA hash navigations (user re-opens the new-ticket page).

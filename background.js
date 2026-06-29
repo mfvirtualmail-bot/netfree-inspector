@@ -304,6 +304,101 @@ function looksLikeFileDownload(url, resourceType) {
 }
 
 // ─────────────────────────────────────────────────────────
+// True block reason — read NetFree's own code from the 418 body
+// ─────────────────────────────────────────────────────────
+// A blocked URL returns a tiny (~400 B) HTML shell whose iframe src hash
+// carries NetFree's real reason, e.g.
+//     //netfree.link/block/#{"block":"deny","page_info":{...}}
+// Codes seen live:
+//   deny       → blacklisted / חסום (ads, trackers, blocked sites)
+//   unknown    → "site not yet reviewed"  → NetFree's own "Undefined"
+//   risk-type  → "file type not supported by automatic filtering"
+// Reading this is far more reliable than guessing from the block-page
+// .avif image, which only loads for main-frame blocks — sub-resources
+// (tracker pings, media, cookies) never render a block page, so they used
+// to stay 'unknown' and show as "Undefined" even when truly blocked.
+const blockCodeCache    = new Map();   // url → code | null (dedupes refetches)
+const BLOCK_FETCH_TIMEOUT_MS = 6000;
+
+async function fetchBlockCode(url) {
+  if (blockCodeCache.has(url)) return blockCodeCache.get(url);
+  let code = null;
+  try {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), BLOCK_FETCH_TIMEOUT_MS);
+    // credentials omitted — we only need the block shell, not a session.
+    const res   = await fetch(url, { credentials: 'omit', signal: ctrl.signal });
+    clearTimeout(timer);
+    const text  = await res.text();
+    const m = text.match(/\/block\/#([^"'\s]+)/);
+    if (m) {
+      const json = JSON.parse(decodeURIComponent(m[1]));
+      if (json && typeof json.block === 'string') code = json.block;
+    }
+  } catch { /* network/abort/parse failure → null, fall back to heuristic */ }
+  blockCodeCache.set(url, code);
+  return code;
+}
+
+// NetFree block code → this extension's internal blockType (drives the
+// popup badge + colour). null = unrecognised → keep the existing guess.
+function blockTypeFromCode(code) {
+  switch (code) {
+    case 'deny':
+    case 'black-list':
+    case 'default-block':  return 'blacklisted';
+    case 'unknown':
+    case 'unknown-file':   return 'not_whitelisted';
+    case 'risk-type':      return 'file_type';
+    case 'myset':
+    case 'time':
+    case 'tags':           return 'user_settings';
+    default:               return null;
+  }
+}
+
+// Per-tab write queue. The block store is a read-modify-write on
+// chrome.storage.session; concurrent 418s (a page firing many at once)
+// could each read the same state and clobber each other, silently
+// undercounting blocks. Funnel every per-tab mutation through one
+// in-memory promise chain so each get→mutate→set runs atomically.
+const tabWriteChains = new Map();   // tabId → Promise
+function enqueueTabWrite(tabId, fn) {
+  const prev = tabWriteChains.get(tabId) ?? Promise.resolve();
+  const next = prev.then(fn, fn);   // run fn whether or not the prior write threw
+  tabWriteChains.set(tabId, next.catch(() => {}));
+  return next;
+}
+
+// Apply an authoritative block code (reported by the block-page content
+// script) to a tab's stored blocks: cache it, stamp matching requests, and
+// upgrade the group's blockType so the badge matches NetFree exactly.
+async function applyCodeToTab(tabId, url, code) {
+  if (!url || !code) return;
+  blockCodeCache.set(url, code);
+  const newType = blockTypeFromCode(code);
+  let host; try { host = new URL(url).hostname; } catch { host = null; }
+  await enqueueTabWrite(tabId, async () => {
+    const data = await getTabData(tabId);
+    let touched = false;
+    for (const g of data.blocks) {
+      if (g.blockType === 'file_download') continue;
+      let groupMatched = false;
+      for (const r of g.requests) {
+        if (r.url === url || (host && extractDomain(r.url) === host)) {
+          r.blockCode = code;
+          groupMatched = true;
+          touched = true;
+        }
+      }
+      if (groupMatched && newType) g.blockType = newType;
+    }
+    if (touched) await setTabData(tabId, data);
+  });
+  await refreshBadge(tabId);
+}
+
+// ─────────────────────────────────────────────────────────
 // webRequest — observe all completed requests
 // ─────────────────────────────────────────────────────────
 
@@ -314,7 +409,6 @@ chrome.webRequest.onCompleted.addListener(
 
     // ── 1. NetFree block signal: HTTP 418 ──────────────────────────────────
     if (statusCode === BLOCK_CODE && !url.includes(NETFREE_HOST)) {
-      const data   = await getTabData(tabId);
       const domain = extractDomain(url);
 
       // File downloads get their own group so we can show a different
@@ -322,46 +416,38 @@ chrome.webRequest.onCompleted.addListener(
       // generic 3rd-party blocks on the same domain.
       const isFileDl = looksLikeFileDownload(url, type);
 
-      // Infer blockType at creation time from the resource type.
-      // Don't guess "video" from the resource type. sub_frame/media/
-      // object blocks were previously force-classified as file_type and
-      // routed through a video-review UX — but most aren't video (iframes
-      // are ads/widgets/embeds), so that mislabeled the block AND pointed
-      // the ticket at the wrong thing. We now leave them generic
-      // ('unknown' = "something on this page isn't loading") and only
-      // treat a block as video when there's real evidence (an actual
-      // video host/extension — see ticketKindFor in popup.js).
-      let initialBlockType = 'unknown';
-      if (isFileDl) {
-        initialBlockType = 'file_download';
-      }
+      // Read NetFree's real block reason straight from the 418 body. This
+      // is the authoritative classification (deny/unknown/risk-type/…) for
+      // every blocked request, including sub-resources that never render a
+      // block page. Falls back to 'unknown' if the fetch fails. File
+      // downloads keep their dedicated UX group regardless of code.
+      const code     = await fetchBlockCode(url);
+      const codeType = blockTypeFromCode(code);
+      const blockType = isFileDl ? 'file_download' : (codeType ?? 'unknown');
 
-      const groupKey = `${domain}|${initialBlockType}`;
-
-      let group = data.blocks.find(g => g.groupKey === groupKey);
-      if (!group) {
-        group = {
-          domain,
-          groupKey,
-          blockType: initialBlockType,
-          requests: [],
-        };
-        data.blocks.push(group);
-      }
-
-      group.requests.push({
-        url,
-        method:       method ?? 'GET',
-        ip:           ip ?? '',
-        resourceType: type,
-        timestamp:    timeStamp,
-        initiator:    initiator ?? '',
-        harmless:     self.isHarmlessUrl
-                       ? self.isHarmlessUrl(url)
-                       : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
+      // Serialize the store mutation so concurrent 418s can't clobber.
+      await enqueueTabWrite(tabId, async () => {
+        const data     = await getTabData(tabId);
+        const groupKey = `${domain}|${blockType}`;
+        let group = data.blocks.find(g => g.groupKey === groupKey);
+        if (!group) {
+          group = { domain, groupKey, blockType, requests: [] };
+          data.blocks.push(group);
+        }
+        group.requests.push({
+          url,
+          method:       method ?? 'GET',
+          ip:           ip ?? '',
+          resourceType: type,
+          timestamp:    timeStamp,
+          initiator:    initiator ?? '',
+          blockCode:    code ?? null,
+          harmless:     self.isHarmlessUrl
+                         ? self.isHarmlessUrl(url)
+                         : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
+        });
+        await setTabData(tabId, data);
       });
-
-      await setTabData(tabId, data);
       await refreshBadge(tabId);
       return;
     }
@@ -385,22 +471,21 @@ chrome.webRequest.onCompleted.addListener(
         ?? [...data.blocks].reverse().find(g => g.blockType !== 'file_download')
         ?? data.blocks[data.blocks.length - 1];
 
-      if (url.includes('block.avif')) {
-        target.blockType = 'blacklisted';
-        await setTabData(tabId, data);
-      } else if (url.includes('unknown.avif')) {
-        target.blockType = 'not_whitelisted';
-        await setTabData(tabId, data);
-      } else if (url.includes('myset.avif')) {
-        target.blockType = 'user_settings';
-        await setTabData(tabId, data);
-      } else if (url.includes('netfree_full_logo.svg')) {
-        // File-type block: NetFree won't automatically filter this file type
-        // (zip/exe/etc). The block page shows the plain logo, no .avif image.
-        // Only classify as file_type if we haven't already classified as one
-        // of the avif-backed types — avif detection is more authoritative.
-        if (target.blockType === 'unknown') {
-          target.blockType = 'file_type';
+      // Fallback only. The authoritative code comes from the block-page
+      // content script (BLOCK_PAGE_CODE) and the 418-body fetch; the block
+      // image is consulted only when both failed and the group is still
+      // 'unknown'. The netfree_full_logo.svg → file_type guess was removed:
+      // that logo appears on EVERY block page, so it mis-tagged plain
+      // "not yet reviewed" pages (e.g. a new site) as file blocks.
+      if (target.blockType === 'unknown') {
+        if (url.includes('block.avif')) {
+          target.blockType = 'blacklisted';
+          await setTabData(tabId, data);
+        } else if (url.includes('unknown.avif')) {
+          target.blockType = 'not_whitelisted';
+          await setTabData(tabId, data);
+        } else if (url.includes('myset.avif')) {
+          target.blockType = 'user_settings';
           await setTabData(tabId, data);
         }
       }
@@ -496,6 +581,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     case 'GET_RECORDING':
       // Ensure a post-restart session is restored before answering.
       hydrateRecordings().then(() => reply(getRecording(msg.tabId)));
+      return true;
+
+    // ── True block reason for a set of URLs ─────────────────────────────
+    // The popup can't fetch arbitrary domains (its CSP connect-src only
+    // allows netfree.link), so it asks the service worker — which has
+    // <all_urls> host permission — to read each blocked URL's real code
+    // from the 418 body. Used at recording-build time so every blocked row
+    // carries NetFree's exact reason. Results are cached per URL.
+    case 'GET_BLOCK_CODES': {
+      const urls = Array.isArray(msg.urls) ? msg.urls : [];
+      (async () => {
+        const codes = {};
+        await Promise.all(urls.map(async (u) => {
+          try { codes[u] = await fetchBlockCode(u); } catch { codes[u] = null; }
+        }));
+        reply({ codes });
+      })();
+      return true;
+    }
+
+    // Authoritative block code read by the content script straight from the
+    // rendered block page's URL hash — the most reliable source.
+    case 'BLOCK_PAGE_CODE':
+      applyCodeToTab(msg.tabId ?? (_sender.tab && _sender.tab.id), msg.url, msg.code)
+        .finally(() => reply({ ok: true }));
       return true;
   }
 });

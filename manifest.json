@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NetFree Inspector",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "גלה חסימות נט פרי בכל דף באחת — Instantly detect NetFree content filter blocks on any page",
   "permissions": [
     "webRequest",
@@ -18,7 +18,8 @@
     {
       "matches": ["https://netfree.link/*"],
       "js": ["netfree-fill.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "action": {

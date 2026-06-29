@@ -14,10 +14,10 @@ const T = {
     noMeaningfulSub:  'נמצאו רק חסימות פרסומות/מעקב שלא משפיעות על הדף.',
     blocksFound:      (n) => `נמצאו ${n} חסימ${n === 1 ? 'ה' : 'ות'} בדף זה`,
     blocksSubFound:   'לחץ על "פתח בקשה" לפנייה ישירה לנט פרי',
-    blacklisted:      '🚫 חסום — האתר ברשימה השחורה',
-    notWhitelisted:   '⏳ לא ברשימה הלבנה — ממתין לאישור',
-    userSettings:     '⚙️ חסום בהגדרות אישיות',
-    fileType:         '📄 קובץ חסום — דרושה בדיקה ידנית',
+    blacklisted:      '🚫 חסום',
+    notWhitelisted:   '⏳ לא נבדק עדיין',
+    userSettings:     '⚙️ הגדרות אישיות',
+    fileType:         '📄 קובץ — בדיקה',
     fileTypeSub:      'הסינון האוטומטי של נט פרי לא הצליח לסווג את הקובץ. הקלטת התעבורה שמצורפת לבקשה מאפשרת לנציג נט פרי לבדוק אותו ידנית.',
     fileDownload:     '⚠️ בעיה בהורדת קובץ',
     fileDownloadProblem: 'הורדה אוטומטית של קובץ נחסמה ע"י "התראת שיבוש קבצים" של נט פרי. הקובץ שירדת ריק או פגום.',
@@ -46,6 +46,10 @@ const T = {
     ticketIntro:      (host) => `שלום,\nאני מנסה להשתמש באתר ${host} ומשהו בדף אינו נטען כראוי.`,
     ticketIntroList:  'בבדיקה ב-console של הדפדפן נמצא שהבקשות הבאות נחסמות על ידי נט פרי:',
     ticketAsk:        'אבקש לבדוק ולאשר את החסימות הרלוונטיות כדי שהאתר יוכל לפעול תקין. תודה רבה.',
+    newSiteSubject:   (host) => `בקשה לאתר חדש - ${host}`,
+    newSiteBody:      (url) => `שלום,\nאבקש לבדוק ולאשר את האתר החדש הבא:\n${url}\n\nתודה רבה.`,
+    newSiteTitle:     'האתר עדיין לא פתוח',
+    newSiteSub:       'לחץ למטה לפתיחת בקשה — נט פרי תבדוק ותפתח אותו',
     ticketVideoSubject:    (host) => `בקשת בדיקת וידאו - ${host}`,
     ticketVideoIntro:      'שלום,\nאני רוצה לצפות בסרטון הבא. אבקש לבדוק ולאשר אותו. תודה רבה.',
     ticketVideoLinkLabel:  'קישור ישיר לסרטון',
@@ -61,10 +65,10 @@ const T = {
     noMeaningfulSub:  'Only ad/tracker blocks were found — these don\'t affect the page.',
     blocksFound:      (n) => `${n} block${n !== 1 ? 's' : ''} found on this page`,
     blocksSubFound:   'Click "Open Request" to report directly to NetFree',
-    blacklisted:      '🚫 Blacklisted — explicitly blocked',
-    notWhitelisted:   '⏳ Not whitelisted — pending review',
-    userSettings:     '⚙️ Blocked by personal settings',
-    fileType:         '📄 File blocked — manual review required',
+    blacklisted:      '🚫 Blocked',
+    notWhitelisted:   '⏳ Not reviewed',
+    userSettings:     '⚙️ Your settings',
+    fileType:         '📄 File — review',
     fileTypeSub:      'NetFree\'s automatic filter couldn\'t classify this file. The traffic recording attached to your request lets a NetFree agent review it manually.',
     fileDownload:     '⚠️ Download problem',
     fileDownloadProblem: 'An automatic file download was blocked by NetFree\'s file-distortion warning. The file you got is empty or broken.',
@@ -93,6 +97,10 @@ const T = {
     ticketIntro:      (host) => `Hello,\nI'm trying to use the website ${host} and something on the page isn't loading correctly.`,
     ticketIntroList:  'When checking the browser console I found that the following requests are being blocked by NetFree:',
     ticketAsk:        'Please review and whitelist the relevant requests so the site can work correctly. Thank you.',
+    newSiteSubject:   (host) => `New website request — ${host}`,
+    newSiteBody:      (url) => `Hello,\nPlease review and approve the following new website:\n${url}\n\nThank you.`,
+    newSiteTitle:     'This website is still not open',
+    newSiteSub:       'Click below to open a request — NetFree will review and open it',
     ticketVideoSubject:    (host) => `Video review request — ${host}`,
     ticketVideoIntro:      'Hello,\nI would like to watch the following video. Please review and approve it. Thank you.',
     ticketVideoLinkLabel:  'Direct link',
@@ -180,6 +188,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('reloadBtn').addEventListener('click', reloadTab);
   document.getElementById('copyAllBtn').addEventListener('click', copyAll);
   document.getElementById('reportBtn').addEventListener('click', copyReport);
+
+  // Single page-level "Open NetFree Request". For a brand-new, not-yet-
+  // reviewed site we file a plain review request with no recording;
+  // otherwise one ticket covering every block on the page.
+  document.getElementById('pageTicketBtn').addEventListener('click', async () => {
+    if (isNewSiteRequest()) {
+      await stashNewSiteTicket();
+    } else {
+      await stashPendingTicket();
+    }
+    openTicketWindow(makeTicketUrl(tabUrl, tabUrl, 'site'));
+  });
   document.getElementById('optionsBtn').addEventListener('click', () => {
     if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
   });
@@ -223,6 +243,12 @@ function render() {
   const sumTl = document.getElementById('summaryTitle');
   const sumSb = document.getElementById('summarySub');
   const sumIc = document.getElementById('summaryIcon');
+  const pageBtn = document.getElementById('pageTicketBtn');
+
+  // The single page-level "Open NetFree Request" button is shown only in
+  // the blocks state below; hide it for every other state (loading, clean,
+  // harmless-only, file-download-only).
+  if (pageBtn) pageBtn.style.display = 'none';
   const hBtn  = document.getElementById('harmlessBtn');
   const hBadge = document.getElementById('harmlessCount');
 
@@ -293,25 +319,46 @@ function render() {
 
   const shownTotal = visibleBlocks.reduce((s, g) => s + g.requests.length, 0);
   const onlyFileDownload = visibleBlocks.every(g => g.blockType === 'file_download');
+  // The page itself is simply "not yet reviewed" (a brand-new site).
+  const newSite = isNewSiteRequest();
 
-  // When every block is a file-download issue, the generic summary
-  // ("1 block found on this page — click Open Request to report") is
-  // both wrong and noisy. The card itself reads as the header. Hide
-  // the banner entirely in that case.
+  const showPageBtn = () => {
+    if (!pageBtn) return;
+    const lbl = document.getElementById('pageTicketLabel');
+    if (lbl) lbl.textContent = t.openTicket;
+    pageBtn.style.display = '';
+  };
+
   if (onlyFileDownload) {
+    // File-download issues read as their own card; the generic banner
+    // ("1 block found — click Open Request") is wrong and noisy here.
     sum.style.display = 'none';
+  } else if (newSite) {
+    // Don't frame a brand-new site as "1 block found" with a redundant
+    // main_frame card. Just say it isn't open yet and point at the button.
+    sum.style.display = '';
+    sum.className     = 'summary state-blocks';
+    sumIc.textContent = '⏳';
+    sumTl.textContent = t.newSiteTitle;
+    sumSb.textContent = t.newSiteSub;
+    showPageBtn();
   } else {
     sum.style.display = '';
     sum.className     = 'summary state-blocks';
     sumIc.textContent = '🔴';
     sumTl.textContent = t.blocksFound(shownTotal);
     sumSb.textContent = t.blocksSubFound;
+    showPageBtn();
   }
 
   // ── Block cards ─────────────────────────────────────────
+  // New-site case: the banner + button say everything; the lone main_frame
+  // card below is just noise, so skip it.
   list.innerHTML = '';
-  for (const group of visibleBlocks) {
-    list.appendChild(buildCard(group, t));
+  if (!newSite) {
+    for (const group of visibleBlocks) {
+      list.appendChild(buildCard(group, t));
+    }
   }
 }
 
@@ -349,17 +396,12 @@ function buildCard(group, t) {
   // user past the gate via a real tab) and "Disable warning gate"
   // (opens NetFree's wiki page explaining how to turn it off). Per-row
   // copy/open buttons handled in reqRowHtml.
-  const actionsHtml = isFileDl
-    ? `
-      <button class="card-action-btn disable-gate-btn" data-url="${esc(NETFREE_DISABLE_GATE_WIKI)}" type="button">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-        ${esc(t.disableWarnGate)}
-      </button>
-      <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      </button>
-    `
-    : `
+  // Only video cards keep a per-card action row ("Send video for review").
+  // Generic blocks rely on the single page-level request button, so they
+  // get no action row at all — that keeps a long list (many ad/tracker
+  // blocks) compact.
+  const showActions = kind.type === 'video';
+  const actionsHtml = showActions ? `
       <button class="card-action-btn ticket-btn" data-ticket-url="${esc(ticketUrl)}" type="button">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         ${esc(ticketLabel)}
@@ -367,36 +409,26 @@ function buildCard(group, t) {
       <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
-      <button class="card-action-btn suggest-btn icon-only" data-domain="${esc(domain)}" title="${esc(t.suggestHarmless)}" aria-label="${esc(t.suggestHarmless)}">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8"/><path d="M8 12h8"/><circle cx="12" cy="12" r="10"/></svg>
-      </button>
-    `;
+    ` : '';
 
   const card = document.createElement('div');
   card.className = 'block-card';
 
   card.innerHTML = `
-    <div class="block-card-strip ${meta.stripClass}"></div>
-
     <div class="block-card-head">
       <span class="block-badge ${meta.badgeClass}">${esc(meta.label(t))}</span>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:6px;padding:4px 12px 8px;">
       <span class="block-domain">${esc(domain)}</span>
       <span class="block-count-pill">${esc(t.requests(requests.length))}</span>
     </div>
 
-    ${blockType === 'file_type' ? `<div style="margin:0 12px 8px;padding:8px 10px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:11px;line-height:1.45;color:#1E3A8A;">${esc(t.fileTypeSub)}</div>` : ''}
+    ${blockType === 'file_type' ? `<div style="margin:0 12px 6px;padding:7px 9px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:11px;line-height:1.4;color:#1E3A8A;">${esc(t.fileTypeSub)}</div>` : ''}
 
     <div class="block-requests" id="reqs-${esc(domain)}">
       ${shown.map(req => reqRowHtml(req, { isFileDl })).join('')}
       ${hiddenCount > 0 ? `<div class="more-rows">${esc(t.moreRequests(hiddenCount))}</div>` : ''}
     </div>
 
-    <div class="block-card-actions">
-      ${actionsHtml}
-    </div>
+    ${showActions ? `<div class="block-card-actions">${actionsHtml}</div>` : ''}
   `;
 
   // Per-row copy buttons
@@ -407,8 +439,8 @@ function buildCard(group, t) {
     });
   });
 
-  // Group copy button
-  card.querySelector('.copy-group-btn').addEventListener('click', () => {
+  // Group copy button (only present on video cards now)
+  card.querySelector('.copy-group-btn')?.addEventListener('click', () => {
     copyText(requests.map(r => r.url).join('\n'));
   });
 
@@ -788,6 +820,38 @@ async function stashPendingTicket(focusGroup = null) {
   await copyText(clipboard, T[lang].contentCopied);
 }
 
+// Stash a plain "new website" review request — no traffic recording. Used
+// when the main page itself is merely "not yet reviewed" (NetFree's own
+// flow for an unknown site is a simple site request; a recording of a site
+// that never loaded is pointless). t=site, matching NetFree's block page.
+async function stashNewSiteTicket() {
+  const t       = T[lang];
+  const subject = t.newSiteSubject(pageHost());
+  const body    = t.newSiteBody(tabUrl);
+  const { clipboard } = buildClipboard(subject, body);
+  try {
+    await chrome.storage.local.set({ pendingTicket: { subject, body, ts: Date.now() } });
+  } catch { /* clipboard copy below is the fallback */ }
+  await copyText(clipboard, t.contentCopied);
+}
+
+// Ask the service worker for NetFree's real block code for each URL. The
+// popup itself can't fetch these domains (CSP connect-src is netfree.link
+// only), so the SW — which has <all_urls> permission — reads each 418
+// body. Returns { url: code|null }. Done at recording-build time so every
+// blocked row gets NetFree's exact reason regardless of what the always-on
+// tracker happened to cache.
+async function fetchBlockCodes(urls) {
+  const uniq = [...new Set(urls)].filter(Boolean);
+  if (!uniq.length) return {};
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'GET_BLOCK_CODES', urls: uniq });
+    return (res && res.codes) || {};
+  } catch {
+    return {};
+  }
+}
+
 // Build & upload a NetFree-compatible traffic recording from the
 // currently visible blocks. Returns the netfree.link view URL on
 // success or null when there's nothing to upload.
@@ -815,16 +879,33 @@ async function createTrafficRecordingUrl() {
     // requests carry no block type.
     const blockTypeByUrl  = {};
     const blockTypeByHost = {};
+    const blockCodeByUrl  = {};
+    const blockCodeByHost = {};
     for (const g of blocks) {
       for (const r of g.requests) {
         blockTypeByUrl[r.url] = g.blockType;
-        try { blockTypeByHost[new URL(r.url).hostname] = g.blockType; } catch { /* skip */ }
+        if (r.blockCode) blockCodeByUrl[r.url] = r.blockCode;
+        try {
+          const h = new URL(r.url).hostname;
+          blockTypeByHost[h] = g.blockType;
+          if (r.blockCode) blockCodeByHost[h] = r.blockCode;
+        } catch { /* skip */ }
       }
     }
+    // Authoritative: read each blocked row's real code straight from its
+    // 418 body now (via the SW), so the recording matches NetFree exactly —
+    // not whatever the always-on tracker raced to cache. Cached stored
+    // codes are only a fallback if the live read fails.
+    const liveCodes = await fetchBlockCodes(rec.requests.filter(r => r.blocked).map(r => r.url));
     const reqs = rec.requests.map(r => ({
       ...r,
       blockType: r.blocked
         ? (blockTypeByUrl[r.url] || blockTypeByHost[r.host] || 'unknown')
+        : undefined,
+      // NetFree's own code (deny/unknown/risk-type/…) emitted verbatim so
+      // the viewer's Block-reason matches.
+      blockCode: r.blocked
+        ? (liveCodes[r.url] || blockCodeByUrl[r.url] || blockCodeByHost[r.host] || null)
         : undefined,
     }));
     arr = self.NF.buildTrafficRecording(reqs);
@@ -838,7 +919,16 @@ async function createTrafficRecordingUrl() {
       }))
       .filter(g => g.requests.length > 0);
     if (groups.length === 0) return null;
-    arr = self.NF.buildTrafficRecording(groups);
+    // Read each blocked URL's real code now so the recording is faithful.
+    const liveCodes = await fetchBlockCodes(groups.flatMap(g => g.requests.map(r => r.url)));
+    const groupsWithCodes = groups.map(g => ({
+      ...g,
+      requests: g.requests.map(r => ({
+        ...r,
+        blockCode: liveCodes[r.url] || r.blockCode || null,
+      })),
+    }));
+    arr = self.NF.buildTrafficRecording(groupsWithCodes);
   }
 
   if (!arr || !arr.length) return null;
@@ -964,6 +1054,25 @@ function ticketKindFor(group) {
     return { type: 'video', labelKey: 'sendVideoForReview' };
   }
   return { type: 'site', labelKey: 'openTicket' };
+}
+
+// The block group representing the main page itself (a main_frame request).
+function mainFrameBlock() {
+  return blocks.find(g => g.requests.some(r => r.resourceType === 'main_frame')) || null;
+}
+
+// True when the page the user is trying to reach is itself blocked only as
+// "not yet reviewed" (NetFree code 'unknown'). That's a brand-new site → a
+// plain review request, no recording. Deliberately NOT for 'deny' (a real
+// block) or any other category — only the unknown/unreviewed main page.
+function isNewSiteRequest() {
+  const g = mainFrameBlock();
+  if (!g) return false;
+  const mf   = g.requests.find(r => r.resourceType === 'main_frame');
+  const code = mf && mf.blockCode;
+  if (code) return code === 'unknown';
+  // Fallback when the block-code fetch failed: our coarse classification.
+  return g.blockType === 'not_whitelisted';
 }
 
 function pageHost() {

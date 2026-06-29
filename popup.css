@@ -272,10 +272,10 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 14px 12px;
+  padding: 0 14px 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
@@ -333,8 +333,8 @@ body {
 .block-card-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 13px 9px;
+  gap: 8px;
+  padding: 8px 12px;
 }
 
 /* Badge → quiet capsule, colored dot + muted label */
@@ -371,6 +371,7 @@ body {
   font-weight: 600;
   color: var(--text);
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -394,14 +395,14 @@ body {
 /* ── Request rows ── */
 .block-requests {
   border-top: 1px solid var(--line);
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .req-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 13px;
+  padding: 4px 12px;
   transition: background var(--ease);
 }
 .req-row:hover { background: var(--surface); }
@@ -484,6 +485,28 @@ body {
   background: var(--surface);
   border-color: var(--line-strong);
 }
+
+/* Single page-level "Open NetFree Request" button, sits under the summary
+   banner and files one ticket covering every block on the page — replaces
+   the per-card open-request buttons. */
+.page-ticket-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: calc(100% - 28px);
+  margin: 0 14px 10px;
+  padding: 11px 12px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  transition: background var(--ease), transform 80ms ease;
+}
+.page-ticket-btn:hover { background: var(--accent-hover); }
+.page-ticket-btn:active { transform: scale(.98); }
 
 /* Ticket button = the primary call-to-action, dominates the card footer */
 .card-action-btn.ticket-btn {

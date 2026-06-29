@@ -25,17 +25,27 @@
 const NF_SAVE_URL    = 'https://netfree.link/api/user/save-traffic-record';
 const NF_VIEW_PREFIX = 'https://netfree.link/app/#/tools/traffic/view/';
 
-// How a blocked request is represented, keyed by the extension's own
-// block-type classification (which it reads from NetFree's block-page
-// images — see background.js). We only assert a deny/חסום reason when we
-// actually saw the blacklist signal; everything we can't positively
-// classify is reported as the honest `block:unknown` (which is also what
-// NetFree itself emits for filetype / not-yet-categorised blocks), rather
-// than fabricating a "denied" reason we don't have evidence for.
+// How a blocked request is represented in the recording.
 //   mapFilter  → drives the viewer's Block-reason column (Hebrew category)
 //   blockField → the load-bearing top-level `block` field the viewer reads
-//                to paint the orange "Blocked" tag
-function blockRepresentation(blockType) {
+//                to paint the Block-reason tag
+//
+// When we captured NetFree's own block code from the 418 body (blockCode —
+// e.g. 'deny', 'unknown', 'risk-type'), we pass it through verbatim so the
+// viewer renders the EXACT same reason NetFree itself would. Otherwise we
+// fall back to the coarse blockType classification, asserting a deny/חסום
+// reason only when we positively saw a blacklist signal and reporting an
+// honest `block:unknown` for everything else.
+const DENY_CODES = new Set(['deny', 'black-list', 'default-block', 'myset', 'time', 'tags']);
+function blockRepresentation(blockType, blockCode) {
+  if (blockCode) {
+    const isDeny = DENY_CODES.has(blockCode);
+    return {
+      reqFilter:  isDeny ? 'deny'  : blockCode,
+      mapFilter:  isDeny ? 'חסום'  : null,
+      blockField: blockCode,
+    };
+  }
   switch (blockType) {
     case 'blacklisted':
       return { reqFilter: 'deny',    mapFilter: 'חסום', blockField: 'deny' };
@@ -84,7 +94,7 @@ function buildRequestEvents(req, index) {
   ev.push({ action: `Request:filter:user`,                      id, time: reqStep() });
 
   if (req.blocked) {
-    const rep = blockRepresentation(req.blockType);
+    const rep = blockRepresentation(req.blockType, req.blockCode);
     if (rep.mapFilter) {
       ev.push({ action: `map:filter:${rep.mapFilter}`,          id, time: reqStep() });
     }
@@ -156,6 +166,7 @@ function normalizeInput(input) {
           ip:         r.ip,
           blocked:    true,
           blockType:  g.blockType || 'unknown',
+          blockCode:  r.blockCode || null,
         });
       }
     }
