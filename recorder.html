@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>NetFree Inspector — recording</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #0F172A;
+      color: #F8FAFC;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+      padding: 18px 20px;
+      user-select: none;
+    }
+
+    /* ── Pick phase (what the user actually sees) ── */
+    #pick { display: flex; flex-direction: column; gap: 8px; }
+    #pick .row { display: flex; align-items: center; gap: 10px; }
+    #pick .spin {
+      width: 15px; height: 15px; flex: 0 0 auto;
+      border: 2.5px solid rgba(255,255,255,.25); border-top-color: #60A5FA;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #pick .head { font-weight: 700; font-size: 14.5px; }
+    #pick .hint { font-size: 12.5px; color: #94A3B8; line-height: 1.45; }
+
+    /* ── Recording / uploading (seen only if window is restored) ── */
+    #live { display: none; align-items: center; gap: 11px; }
+    #dot { width: 11px; height: 11px; border-radius: 50%; background: #F87171; flex: 0 0 auto; animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+    #live .info { flex: 1 1 auto; min-width: 0; }
+    #title { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #time { display: block; font-size: 12px; color: #94A3B8; font-variant-numeric: tabular-nums; }
+    #stop {
+      flex: 0 0 auto; border: none; border-radius: 999px;
+      padding: 9px 16px; background: #EF4444; color: #fff;
+      font: 700 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif; cursor: pointer;
+    }
+    #stop:hover { background: #DC2626; }
+    #stop:disabled { opacity: .6; cursor: default; }
+
+    body.recording #pick, body.uploading #pick { display: none; }
+    body.recording #live, body.uploading #live { display: flex; }
+    body.uploading #dot { animation: none; background: #F59E0B; }
+    body.uploading #stop { display: none; }
+
+    .footnote { font-size: 11.5px; color: #64748B; }
+  </style>
+</head>
+<body>
+  <!-- This window is visible ONLY while the user picks a source; it minimizes
+       itself the instant recording starts (MediaRecorder keeps running while
+       minimized — verified). From then on the user stops via the on-page
+       floating pill or Chrome's "Stop sharing" bar. Restoring this window from
+       the taskbar shows the live state + a Stop button as a fallback. -->
+  <div id="pick">
+    <div class="row">
+      <span class="spin"></span>
+      <span class="head" id="pickHead">Choose what to record</span>
+    </div>
+    <span class="hint" id="pickHint">Pick a screen, window, or tab in the dialog that just opened. This little window tucks away automatically once recording begins.</span>
+  </div>
+
+  <div id="live">
+    <span id="dot"></span>
+    <div class="info">
+      <span id="title">Recording screen</span>
+      <span id="time"></span>
+    </div>
+    <button id="stop" type="button">Stop &amp; send</button>
+  </div>
+
+  <div class="footnote" id="foot"></div>
+
+  <script src="recorder.js"></script>
+</body>
+</html>

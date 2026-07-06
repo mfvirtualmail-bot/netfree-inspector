@@ -54,6 +54,20 @@ const T = {
     ticketVideoIntro:      'שלום,\nאני רוצה לצפות בסרטון הבא. אבקש לבדוק ולאשר אותו. תודה רבה.',
     ticketVideoLinkLabel:  'קישור ישיר לסרטון',
     ticketVideoLinksLabel: 'קישורים ישירים',
+    recordScreen:      'הקלט מסך',
+    recordingScreen:   'מקליט מסך…',
+    choosingSource:    'בחר מה להקליט…',
+    uploadingRec:      'מעלה הקלטה…',
+    stopAndSend:       'עצור ושלח',
+    recUploaded:       '✓ ההקלטה הועלתה — טופס הבקשה נפתח',
+    recFailed:         'העלאת ההקלטה נכשלה, נסה שוב',
+    recPartial:        'טופס הבקשה נפתח — אך העלאת הווידאו נכשלה',
+    recNotLoggedIn:    'יש להתחבר ל-NetFree כדי להעלות הקלטה',
+    videoFailedNote:   'הערה: העלאת סרטון הקלטת המסך נכשלה.',
+    trafficFailedNote: 'הערה: העלאת הקלטת התעבורה נכשלה.',
+    recBusy:           'הקלטה כבר פעילה',
+    screenTicketSubject: (host) => `בקשה עם הקלטת מסך - ${host}`,
+    screenTicketIntro:   (host) => `שלום,\nמצורפת הקלטת מסך שמדגימה את הבעיה שאני נתקל בה${host ? ` באתר ${host}` : ''}. אבקש לבדוק ולאשר. תודה רבה.`,
   },
   en: {
     subtitle:         'Block Inspector',
@@ -105,6 +119,20 @@ const T = {
     ticketVideoIntro:      'Hello,\nI would like to watch the following video. Please review and approve it. Thank you.',
     ticketVideoLinkLabel:  'Direct link',
     ticketVideoLinksLabel: 'Direct links',
+    recordScreen:      'Record screen',
+    recordingScreen:   'Recording screen…',
+    choosingSource:    'Choose what to record…',
+    uploadingRec:      'Uploading recording…',
+    stopAndSend:       'Stop & send',
+    recUploaded:       '✓ Recording uploaded — request form opened',
+    recFailed:         'Recording upload failed, please try again',
+    recPartial:        'Request form opened — but the video upload failed',
+    recNotLoggedIn:    'Log in to NetFree to upload a recording',
+    videoFailedNote:   'Note: the screen-recording video failed to upload.',
+    trafficFailedNote: 'Note: the traffic recording failed to upload.',
+    recBusy:           'A recording is already in progress',
+    screenTicketSubject: (host) => `Screen recording request — ${host}`,
+    screenTicketIntro:   (host) => `Hello,\nAttached is a screen recording showing the problem I'm experiencing${host ? ` on ${host}` : ''}. Please review and approve. Thank you.`,
   },
 };
 
@@ -214,6 +242,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       render();
     });
   }
+
+  // Screen recording — page-independent capture. The trigger + live banner
+  // live in their own zone above the footer; state is mirrored in
+  // storage.local by the background worker so the popup stays in sync even
+  // after it was closed for the whole recording.
+  const srEls = screenRecEls();
+  if (srEls.btn)  srEls.btn.addEventListener('click', startScreenRec);
+  if (srEls.stop) srEls.stop.addEventListener('click', stopScreenRec);
+  await refreshScreenRecUI();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes.screenRec || changes.screenRecResult) refreshScreenRecUI();
+  });
 });
 
 function syncHarmlessBtn(btn) {
@@ -673,6 +714,10 @@ function applyLang(newLang, doRender = true) {
   const hBtn = document.getElementById('harmlessBtn');
   if (hBtn) syncHarmlessBtn(hBtn);
 
+  // The screen-rec banner's title is dynamic (recording/uploading), so the
+  // data-he/data-en pass above doesn't cover it — refresh from current state.
+  if (typeof refreshScreenRecUI === 'function') refreshScreenRecUI();
+
   chrome.storage.local.set({ lang });
   if (doRender) render();
 }
@@ -716,6 +761,137 @@ async function reloadTab() {
 async function copyAll() {
   const allUrls = blocks.flatMap(g => g.requests.map(r => r.url)).join('\n');
   if (allUrls) await copyText(allUrls);
+}
+
+// ─────────────────────────────────────────────
+// Screen recording (video → NetFree upload → ticket)
+// ─────────────────────────────────────────────
+// The heavy lifting (picker, MediaRecorder, upload) is in the recorder
+// window; the ticket is assembled by the background. The popup only kicks it
+// off, shows the live banner, and surfaces the outcome — it does NOT hold the
+// recording, so closing the popup never interrupts it.
+let srTimer = null;
+
+function screenRecEls() {
+  return {
+    zone:   document.getElementById('screenRecZone'),
+    btn:    document.getElementById('screenRecBtn'),
+    label:  document.getElementById('screenRecLabel'),
+    active: document.getElementById('screenRecActive'),
+    title:  document.getElementById('screenRecTitle'),
+    time:   document.getElementById('screenRecTime'),
+    stop:   document.getElementById('screenRecStopBtn'),
+  };
+}
+
+async function startScreenRec() {
+  const t    = T[lang];
+  const host = pageHost();
+  // Pass the localized ticket text now (we know the language + page here);
+  // the background appends the [video-embedded#] line once upload returns a
+  // filekey. `url` seeds the new-ticket form's page reference.
+  const ticket = {
+    subject:      t.screenTicketSubject(host),
+    bodyIntro:    t.screenTicketIntro(host === '—' ? '' : host),
+    url:          tabUrl,
+    // The background appends "<label>: <view-url>" for the traffic
+    // recording captured alongside the video — localized here, used there.
+    trafficLabel:      lang === 'he' ? 'הקלטת תעבורה' : 'Traffic recording',
+    videoFailedNote:   t.videoFailedNote,
+    trafficFailedNote: t.trafficFailedNote,
+  };
+  try {
+    chrome.runtime.sendMessage({ type: 'SCREEN_RECORD_START', tabId, host, ticket },
+      () => void chrome.runtime.lastError);
+  } catch { /* SW asleep / closing — the picker still opens from the worker */ }
+  // Close NOW: Chrome parents the source picker to the focused window, and
+  // if that's this (already-closing) popup the picker dismisses itself
+  // instantly — the user sees a flash and no picker. The background waits
+  // for the popup to be gone before showing it.
+  window.close();
+}
+
+async function stopScreenRec() {
+  const t   = T[lang];
+  const els = screenRecEls();
+  if (els.stop)  els.stop.disabled = true;   // optimistic: block double-clicks
+  if (els.title) els.title.textContent = t.uploadingRec;
+  if (els.time)  els.time.textContent = '';
+  stopSrTimer();
+  try { await chrome.runtime.sendMessage({ type: 'SCREEN_RECORD_STOP' }); } catch { /* ok */ }
+}
+
+function fmtElapsed(ms) {
+  const s  = Math.max(0, Math.floor(ms / 1000));
+  const m  = Math.floor(s / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return `${m}:${ss}`;
+}
+
+function startSrTimer(startedAt) {
+  stopSrTimer();
+  const els  = screenRecEls();
+  const tick = () => { if (els.time && startedAt) els.time.textContent = fmtElapsed(Date.now() - startedAt); };
+  tick();
+  srTimer = setInterval(tick, 1000);
+}
+function stopSrTimer() { if (srTimer) { clearInterval(srTimer); srTimer = null; } }
+
+// Reflect the live recording state (from storage.local) into the zone, and
+// toast a freshly-finished recording's outcome exactly once.
+function applyScreenRecState(state, result) {
+  const t   = T[lang];
+  const els = screenRecEls();
+  if (!els.zone) return;
+
+  const status    = state && state.status;
+  const recording = status === 'recording';
+  const busy      = status === 'picking' || status === 'uploading';
+
+  if (recording || busy) {
+    els.btn.style.display = 'none';
+    els.active.hidden     = false;
+    els.stop.disabled     = busy;
+    if (recording) {
+      els.title.textContent = t.recordingScreen;
+      startSrTimer(state.startedAt);
+    } else {
+      els.title.textContent = status === 'picking' ? t.choosingSource : t.uploadingRec;
+      els.time.textContent  = '';
+      stopSrTimer();
+    }
+    return;
+  }
+
+  // Idle.
+  els.active.hidden      = true;
+  els.btn.style.display  = '';
+  els.stop.disabled      = false;
+  stopSrTimer();
+
+  // Announce a recent outcome once, then mark it seen so reopening the popup
+  // doesn't re-toast it.
+  if (result && !result._seen) {
+    const fresh = !result.ts || (Date.now() - result.ts) < 120000;
+    if (fresh) {
+      const code = result.error && result.error !== 'error' ? ` [${result.error}]` : '';
+      if (result.ok) showToast(t.recUploaded);
+      // A request form DID open (traffic/intro), only the video is missing.
+      else if (result.partial) showToast(t.recPartial + code);
+      else if (result.error === 'not-authenticated') showToast(t.recNotLoggedIn);
+      // Show the raw reason (http-413, upload-timeout, …) — "failed, try
+      // again" alone makes remote diagnosis impossible.
+      else showToast(t.recFailed + code);
+    }
+    chrome.storage.local.set({ screenRecResult: { ...result, _seen: true } });
+  }
+}
+
+async function refreshScreenRecUI() {
+  try {
+    const r = await chrome.storage.local.get(['screenRec', 'screenRecResult']);
+    applyScreenRecState(r.screenRec || null, r.screenRecResult || null);
+  } catch { /* storage unavailable — leave the idle button showing */ }
 }
 
 // Build a NetFree-ticket-ready subject + body. When `withUrlList` is true,

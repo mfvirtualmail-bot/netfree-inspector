@@ -534,6 +534,89 @@ body {
 }
 
 /* ════════════════════════════════════════
+   SCREEN RECORDING ZONE
+   Idle → a slim "Record screen" button.
+   Active → a red banner with a live timer + Stop.
+   Sits above the footer, always visible (recording is
+   page-independent), flex-shrink:0 so the list scrolls under it.
+   ════════════════════════════════════════ */
+.screen-rec-zone {
+  flex-shrink: 0;
+  padding: 0 14px 8px;
+  display: flex;
+  justify-content: center;
+}
+/* The active banner is display:flex below, which overrides the `hidden`
+   attribute's default styling — force hidden to always win, otherwise
+   the banner shows even when idle. */
+.screen-rec-zone [hidden] { display: none !important; }
+
+.screen-rec-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  transition: background var(--ease), border-color var(--ease);
+}
+.screen-rec-btn:hover { background: var(--surface); border-color: var(--text-faint); }
+.screen-rec-btn svg { color: var(--red); flex-shrink: 0; width: 12px; height: 12px; }
+
+.screen-rec-active {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--red-soft);
+  border: 1px solid #FBD5D5;
+}
+.rec-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+  animation: recpulse 1.2s ease-in-out infinite;
+}
+@keyframes recpulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+.rec-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.rec-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #991B1B;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-time {
+  font-size: 11px;
+  color: var(--red);
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-stop-btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--red);
+  border: 1px solid var(--red);
+  transition: background var(--ease), opacity var(--ease);
+}
+.rec-stop-btn:hover { background: #B91C1C; }
+.rec-stop-btn:disabled { opacity: .6; cursor: default; }
+
+/* ════════════════════════════════════════
    FOOTER — primary Reload + tiny icon row
    ════════════════════════════════════════ */
 .footer {

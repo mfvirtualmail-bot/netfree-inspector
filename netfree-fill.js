@@ -11,6 +11,7 @@
   const STORAGE_KEY  = 'pendingTicket';
   const MAX_WAIT_MS  = 30000;
   const RETRY_MS     = 200;
+  const STALE_MS     = 10 * 60 * 1000;  // a ticket older than this is dead
   const LOG          = (...a) => console.log('[NetFree Inspector]', ...a);
 
   function isTicketRoute() {
@@ -20,7 +21,16 @@
   async function readPending() {
     try {
       const res = await chrome.storage.local.get([STORAGE_KEY]);
-      return res?.[STORAGE_KEY] ?? null;
+      const p = res?.[STORAGE_KEY] ?? null;
+      // A ticket that was stashed but never filled — e.g. the upload flow
+      // opened the form but NetFree bounced to #/login — would otherwise
+      // sit in storage.local across restarts and silently autofill an
+      // unrelated ticket the user opens days later. Expire it.
+      if (p && p.ts && (Date.now() - p.ts) > STALE_MS) {
+        await clearPending();
+        return null;
+      }
+      return p;
     } catch (e) {
       LOG('readPending error:', e);
       return null;
@@ -67,6 +77,7 @@
 
   let pendingCache = null;     // remember in-memory across retries
   let storageCleared = false;  // only clear chrome.storage.local once
+  let verifiedOnce = false;    // both fields have held the value at least once
 
   async function getPending() {
     if (pendingCache) return pendingCache;
@@ -85,21 +96,31 @@
     const content = document.querySelector('textarea[name="content"]');
     if (!title && !content) return { mounted: false, filled: false };
 
+    // Before the first successful fill, write whenever the field doesn't
+    // match. AFTER it (verifiedOnce), only rewrite a field that Angular has
+    // reset to empty — otherwise the retry loop would clobber edits the
+    // user makes to the pre-filled text (they usually add a sentence).
+    const needsWrite = (el, want) =>
+      verifiedOnce ? el.value === '' : el.value !== want;
+
     let filled = false;
-    if (title && pending.subject && title.value !== pending.subject) {
+    if (title && pending.subject && needsWrite(title, pending.subject)) {
       filled = setFieldValue(title, pending.subject) || filled;
     }
-    if (content && pending.body && content.value !== pending.body) {
+    if (content && pending.body && needsWrite(content, pending.body)) {
       filled = setFieldValue(content, pending.body) || filled;
     }
 
     // Once both fields hold the expected value, retire the storage entry.
     const titleOk   = !title   || !pending.subject || title.value   === pending.subject;
     const contentOk = !content || !pending.body    || content.value === pending.body;
-    if (titleOk && contentOk && !storageCleared) {
-      await clearPending();
-      storageCleared = true;
-      LOG('filled subject + body OK');
+    if (titleOk && contentOk) {
+      verifiedOnce = true;
+      if (!storageCleared) {
+        await clearPending();
+        storageCleared = true;
+        LOG('filled subject + body OK');
+      }
     }
 
     return { mounted: !!(title || content), filled };
@@ -158,8 +179,9 @@
 
   // Re-arm on SPA hash navigations (user re-opens the new-ticket page).
   window.addEventListener('hashchange', () => {
-    pendingCache  = null;
+    pendingCache   = null;
     storageCleared = false;
+    verifiedOnce   = false;
     startLoop();
   });
 })();
