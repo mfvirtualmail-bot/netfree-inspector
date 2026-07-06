@@ -141,6 +141,31 @@
   .block-row b { font-size: 14px; }
   .block-row span { color: var(--muted); font-size: 13px; }
 
+  /* ── Beta / manual install ── */
+  .beta-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);
+    border-inline-start: 4px solid var(--brand);
+  }
+  .beta-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .beta-head h2 { margin: 0; font-size: 22px; }
+  .beta-badge {
+    font-size: 12px; font-weight: 800; letter-spacing: .5px;
+    color: #fff; background: var(--brand); border-radius: 999px; padding: 3px 10px;
+  }
+  .beta-steps { margin: 14px 0 16px; padding-inline-start: 22px; color: var(--muted); font-size: 14.5px; }
+  .beta-steps li { margin: 5px 0; }
+  .beta-card code {
+    font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace; font-size: 13px;
+    background: #f1f5f9; padding: 1px 6px; border-radius: 6px; color: #334155; direction: ltr;
+  }
+  .beta-note {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+    border-radius: 10px; padding: 12px 14px; font-size: 13.5px; margin-bottom: 20px; line-height: 1.5;
+  }
+  .beta-note b { color: #7f1d1d; }
+
   /* ── Footer ── */
   footer {
     margin: 48px 0 20px; padding-top: 24px;
@@ -231,8 +256,44 @@
           <span class="lang-he">התקן ל-Chrome</span>
           <span class="lang-en hidden">Install for Chrome</span>
         </a>
+        <a class="btn btn-secondary" href="#beta">
+          <span class="lang-he">⬇️ הורד גרסה חדשה (בטא)</span>
+          <span class="lang-en hidden">⬇️ Download latest (beta)</span>
+        </a>
       </div>
     </div>
+
+    <!-- ── Beta / manual install ── -->
+    <section id="beta">
+      <div class="beta-card">
+        <div class="beta-head">
+          <span class="beta-badge">BETA</span>
+          <h2 class="lang-he">קבל את הגרסה החדשה עכשיו</h2>
+          <h2 class="lang-en hidden">Get the newest version early</h2>
+        </div>
+        <p class="lang-he" style="margin:0;color:var(--muted);font-size:14.5px;">הגרסה בחנות Chrome מתעדכנת לפי לוח הבדיקה של Google. רוצה כבר עכשיו את גרסה 1.6.0? התקן אותה ידנית:</p>
+        <p class="lang-en hidden" style="margin:0;color:var(--muted);font-size:14.5px;">The Chrome Web Store copy updates on Google's review schedule. Want version 1.6.0 right now? Install it manually:</p>
+        <ol class="beta-steps">
+          <li class="lang-he">הורד את קובץ ה-ZIP למטה וחלץ אותו.</li>
+          <li class="lang-en hidden">Download the ZIP below and unzip it.</li>
+          <li class="lang-he">פתח <code>chrome://extensions</code> והפעל <b>מצב מפתח</b> (Developer mode) בפינה העליונה.</li>
+          <li class="lang-en hidden">Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
+          <li class="lang-he">לחץ <b>טען לא ארוז</b> (Load unpacked) ובחר את התיקייה שחילצת — זו שמכילה את <code>manifest.json</code>.</li>
+          <li class="lang-en hidden">Click <b>Load unpacked</b> and select the unzipped folder — the one containing <code>manifest.json</code>.</li>
+        </ol>
+        <div class="beta-note">
+          <span aria-hidden="true">⚠️</span>
+          <span>
+            <span class="lang-he">התכונה <b>"רענן ורשום"</b> (הקלטת התעבורה) עדיין לא עובדת כמו שצריך בגרסה זו. זיהוי החסימות ובקשות הווייטליסט פועלים כרגיל.</span>
+            <span class="lang-en hidden">The <b>"Reload &amp; Record"</b> traffic-recording feature isn't working reliably yet in this build. Block detection and one-click whitelist requests work normally.</span>
+          </span>
+        </div>
+        <a class="btn btn-primary" href="https://github.com/mfvirtualmail-bot/netfree-inspector/releases/download/v1.6.0/netfree-inspector-v1.6.0.zip">
+          <span class="lang-he">⬇️ הורד גרסה 1.6.0 (ZIP)</span>
+          <span class="lang-en hidden">⬇️ Download v1.6.0 (ZIP)</span>
+        </a>
+      </div>
+    </section>
 
     <!-- ── Features ── -->
     <section>
