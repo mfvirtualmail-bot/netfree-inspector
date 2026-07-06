@@ -111,6 +111,7 @@ There is **no build step** and **no test suite**. Commands that do exist:
 | Command | Purpose |
 |---|---|
 | `node create-icons.js` | Regenerate all 12 icon PNGs (default + green + red, 4 sizes each). Only needed if you change icon colors or design. |
+| `pwsh scripts/release.ps1 -Version X.Y.Z` | Bump `manifest.json`, build `dist/netfree-inspector-vX.Y.Z.zip` + stable `dist/netfree-inspector.zip`, commit the bump, and cut a GitHub **pre-release**. The `/docs/` landing-page download button follows `releases/latest/download/netfree-inspector.zip`, so a pre-release does **not** change what visitors get. Promote once confirmed good: `gh release edit vX.Y.Z --repo mfvirtualmail-bot/netfree-inspector --latest --prerelease=false`. |
 | *(manual)* | Zip the repo root (excluding `.git`, `store/`, `CLAUDE.md`, `README.md`, `create-icons.js`) to produce a Chrome Web Store upload ZIP. See `store/README.md` for the exact file list. |
 
 ---
