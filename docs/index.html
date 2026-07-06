@@ -267,12 +267,12 @@
     <section id="beta">
       <div class="beta-card">
         <div class="beta-head">
-          <span class="beta-badge">BETA</span>
+          <span class="beta-badge">BETA · 1.7.0</span>
           <h2 class="lang-he">קבל את הגרסה החדשה עכשיו</h2>
           <h2 class="lang-en hidden">Get the newest version early</h2>
         </div>
-        <p class="lang-he" style="margin:0;color:var(--muted);font-size:14.5px;">הגרסה בחנות Chrome מתעדכנת לפי לוח הבדיקה של Google. רוצה כבר עכשיו את הגרסה האחרונה? התקן אותה ידנית:</p>
-        <p class="lang-en hidden" style="margin:0;color:var(--muted);font-size:14.5px;">The Chrome Web Store copy updates on Google's review schedule. Want the newest build right now? Install it manually:</p>
+        <p class="lang-he" style="margin:0;color:var(--muted);font-size:14.5px;"><b style="color:var(--text);">גרסה 1.7.0.</b> הגרסה בחנות Chrome מתעדכנת לפי לוח הבדיקה של Google. רוצה כבר עכשיו את הגרסה האחרונה? התקן אותה ידנית:</p>
+        <p class="lang-en hidden" style="margin:0;color:var(--muted);font-size:14.5px;"><b style="color:var(--text);">Version 1.7.0.</b> The Chrome Web Store copy updates on Google's review schedule. Want the newest build right now? Install it manually:</p>
         <ol class="beta-steps">
           <li class="lang-he">הורד את קובץ ה-ZIP למטה וחלץ אותו.</li>
           <li class="lang-en hidden">Download the ZIP below and unzip it.</li>
@@ -281,11 +281,11 @@
           <li class="lang-he">לחץ <b>טען לא ארוז</b> (Load unpacked) ובחר את התיקייה שחילצת — זו שמכילה את <code>manifest.json</code>.</li>
           <li class="lang-en hidden">Click <b>Load unpacked</b> and select the unzipped folder — the one containing <code>manifest.json</code>.</li>
         </ol>
-        <div class="beta-note">
-          <span aria-hidden="true">⚠️</span>
+        <div style="display:flex;gap:10px;align-items:flex-start;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;padding:12px 14px;font-size:13.5px;margin-bottom:20px;line-height:1.5;">
+          <span aria-hidden="true">🎥</span>
           <span>
-            <span class="lang-he">התכונה <b>"רענן ורשום"</b> (הקלטת התעבורה) עדיין לא עובדת כמו שצריך בגרסה זו. זיהוי החסימות ובקשות הווייטליסט פועלים כרגיל.</span>
-            <span class="lang-en hidden">The <b>"Reload &amp; Record"</b> traffic-recording feature isn't working reliably yet in this build. Block detection and one-click whitelist requests work normally.</span>
+            <span class="lang-he">חדש ב-1.7.0: <b style="color:#1e3a8a;">הקלטת מסך</b> שנשלחת ישירות לבקשת וייטליסט — יחד עם הקלטת תעבורה שנאספת במקביל. לחץ "הקלט מסך", הדגם את הבעיה, ולחץ עצור — בקשת התמיכה נפתחת כשהסרטון והתעבורה כבר מצורפים.</span>
+            <span class="lang-en hidden">New in 1.7.0: <b style="color:#1e3a8a;">screen recording</b> that goes straight into a whitelist request — with a traffic recording captured in parallel. Click "Record screen", demonstrate the problem, hit stop, and the support request opens with the video and traffic already attached.</span>
           </span>
         </div>
         <a class="btn btn-primary" href="https://github.com/mfvirtualmail-bot/netfree-inspector/releases/latest/download/netfree-inspector.zip">
@@ -300,6 +300,13 @@
       <h2 class="lang-he">מה זה עושה</h2>
       <h2 class="lang-en hidden">What it does</h2>
       <div class="features">
+        <div class="feature">
+          <span class="emoji">🎥</span>
+          <h3 class="lang-he">הקלטת מסך + תעבורה לבקשה <small style="color:var(--brand);font-weight:700;">· בטא</small></h3>
+          <h3 class="lang-en hidden">Screen + traffic recording <small style="color:var(--brand);font-weight:700;">· Beta</small></h3>
+          <p class="lang-he">הקלט את המסך כדי להדגים חסימה, והתוסף מצרף אותו — יחד עם הקלטת תעבורה שנאספת במקביל — לבקשת וייטליסט מוכנה בנט פרי. חדש בגרסה 1.7.</p>
+          <p class="lang-en hidden">Record your screen to demonstrate a block, and the extension attaches it — with a parallel traffic recording — to a ready-to-send NetFree whitelist request. New in v1.7.</p>
+        </div>
         <div class="feature">
           <span class="emoji">🛡️</span>
           <h3 class="lang-he">זיהוי מיידי</h3>

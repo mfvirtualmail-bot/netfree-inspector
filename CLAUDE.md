@@ -122,13 +122,14 @@ There is **no build step** and **no test suite**. Commands that do exist:
 |---|---|
 | `manifest_version` | 3 |
 | `name` | NetFree Inspector |
-| `version` | 1.3.0 (see `manifest.json` for current) |
-| `permissions` | `webRequest`, `tabs`, `storage`, `webNavigation` |
+| `version` | see `manifest.json` for current (1.7.0+) |
+| `permissions` | `webRequest`, `tabs`, `storage`, `webNavigation`, `alarms`, `desktopCapture`, `scripting`, `system.display` |
 | `host_permissions` | `<all_urls>` (needed to observe 418 responses on any site) |
 | `background.service_worker` | `background.js` |
 | `action.default_popup` | `popup.html` |
 | `options_ui.page` | `options.html` (opens in a new tab) |
-| `content_security_policy.extension_pages` | Allows `https://netfree.link` in `img-src` so the popup can display the NetFree logo |
+| recorder window | `recorder.html` / `recorder.js` — a window opened at runtime that shows the desktopCapture picker, records with MediaRecorder, and uploads the webm. Must be one page: a chooseDesktopMedia streamId is only usable by the context that requested it (SW can't open the picker; offscreen docs have no desktopCapture API). Minimizes on record start; control via the injected floating pill + Chrome's stop bar. |
+| `content_security_policy.extension_pages` | `img-src` allows `https://netfree.link` (NetFree logo); `connect-src` allows `https:`/`http:` so the SW can fetch blocked URLs to read their real block-code |
 
 ---
 
@@ -136,8 +137,17 @@ There is **no build step** and **no test suite**. Commands that do exist:
 
 ```
 manifest.json            MV3 config
-background.js            Service worker — webRequest listener, classification, state
+background.js            Service worker — webRequest listener, classification, state,
+                         screen-recording orchestration (recorder window + traffic + ticket)
 popup.html/.css/.js      Toolbar popup UI + logic (bilingual HE/EN)
+recorder.html/.js        Recorder window — shows the desktopCapture picker, records the
+                         chosen source with MediaRecorder, uploads the webm to NetFree.
+                         One page because a chooseDesktopMedia streamId is only usable by
+                         the context that requested it. Persists across navigation.
+rec-overlay.js           Injected (chrome.scripting) while recording — floating draggable
+                         stop pill on every page; also flashes the upload outcome.
+traffic-recording.js     Reconstructed-traffic recording builder + uploader (loaded by
+                         both popup.html and background.js)
 options.html/.js         Options/preferences page
 harmless-domains.js      Allowlist of ignorable 3rd-party domains
 create-icons.js          Pure-Node PNG icon generator
