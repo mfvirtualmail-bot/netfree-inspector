@@ -224,14 +224,81 @@ chrome.webRequest.onErrorOccurred.addListener(
       if (gr) { gr.endTime = details.timeStamp; gr.error = details.error; grecSchedulePersist(); }
     }
     const s = recSessions.get(details.tabId);
-    if (!s) return;
-    const r = s.reqs.get(details.requestId);
-    if (!r) return;
-    r.endTime = details.timeStamp;
-    r.error   = details.error;
-    schedulePersist(details.tabId);
+    if (s) {
+      const r = s.reqs.get(details.requestId);
+      if (r) {
+        r.endTime = details.timeStamp;
+        r.error   = details.error;
+        schedulePersist(details.tabId);
+      }
+    }
+
+    // Failed with no status? Could be a NetFree 418 the browser refused to
+    // surface (CORS-killed cross-origin block). Probe it from the SW —
+    // independent of the onHeadersReceived tap, so a block is caught even
+    // when that event is skipped. tracked418 says the other path already
+    // confirmed this request; a probe would be a wasted fetch.
+    const { requestId, url, tabId, error } = details;
+    if (tabId >= 0 && PROBE_ERRORS.has(error) && /^https?:/i.test(url) &&
+        !url.includes(NETFREE_HOST) && !tracked418.has(requestId)) {
+      probe418(url).then((p) => {
+        if (!p.is418) return;
+        const markB = (r) => { r.statusCode = BLOCK_CODE; r.blocked = true; };
+        if (grecSession) {
+          const gr = grecSession.reqs.get(requestId);
+          if (gr) { markB(gr); grecSchedulePersist(); }
+        }
+        const s2 = recSessions.get(tabId);
+        if (s2) {
+          const r2 = s2.reqs.get(requestId);
+          if (r2) { markB(r2); schedulePersist(tabId); }
+        }
+        trackBlock(details);   // popup + badge (dedups by requestId)
+      });
+    }
   },
   { urls: ['<all_urls>'] },
+);
+
+// onHeadersReceived — the PRIMARY 418 tap. NetFree's 418 block shell carries
+// no Access-Control-Allow-Origin header (verified against the live filter),
+// so for a cross-origin XHR/fetch the browser discards the response at the
+// CORS check: onCompleted NEVER fires and the request dies in
+// onErrorOccurred(net::ERR_FAILED) with no status. Only main-frame /
+// same-origin blocks ever reach onCompleted. This event sees the status
+// line before the CORS check, so it is the one place EVERY block is
+// visible. Without it, a page whose blocks are all cross-origin API calls
+// (e.g. base.be → zendesk) shows "No blocks detected" and its traffic
+// recording renders the blocked rows as merely unfinished.
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    if (details.statusCode !== BLOCK_CODE) return;
+    // Finalize any recording rows as blocked NOW — for CORS-killed requests
+    // this is the only event that ever sees the 418. onCompleted (when it
+    // does fire) re-finalizes with identical values; onErrorOccurred only
+    // adds endTime/error and never clears `blocked`.
+    const mark = (r) => {
+      r.endTime     = details.timeStamp;
+      r.statusCode  = details.statusCode;
+      r.blocked     = true;
+      const ct = recHeader(details.responseHeaders, 'content-type');
+      if (ct) r.contentType = ct;
+    };
+    if (grecSession && details.tabId >= 0) {
+      const gr = grecSession.reqs.get(details.requestId);
+      if (gr) { mark(gr); grecSchedulePersist(); }
+    }
+    const s = recSessions.get(details.tabId);
+    if (s) {
+      const r = s.reqs.get(details.requestId);
+      if (r) { mark(r); schedulePersist(details.tabId); }
+    }
+    // Popup/badge tracking (dedups by requestId internally — onCompleted
+    // also routes 418s there as a fallback for cached responses).
+    trackBlock(details);
+  },
+  { urls: ['<all_urls>'] },
+  ['responseHeaders'],
 );
 
 async function startRecording(tabId, host) {
@@ -369,6 +436,13 @@ async function startScreenRecording({ tabId, host, ticket }) {
 async function handleRecorderStarted() {
   const st = await srGet();
   if (!st || st.status !== 'picking') return;
+  // Recording has begun, so the picking watchdog (armed at start to unstick a
+  // dead source-picker) has done its job — clear it. Recording itself is
+  // unbounded in time; leaving the 5-min alarm armed would fire mid-recording
+  // and be misread as 'recorder-lost', force-closing a healthy capture. The
+  // recording phase is guarded instead by window.onRemoved / beforeunload
+  // (abort) and SW-restart reconciliation, none of which need this alarm.
+  clearWatchdog();
   await srSet({ ...st, status: 'recording', startedAt: Date.now() });
   await grecStart();
   await injectOverlayAllTabs();   // show the floating stop pill everywhere
@@ -862,6 +936,50 @@ async function fetchBlockCode(url) {
   return code;
 }
 
+// Probe a request that FAILED without a status: was it actually a NetFree
+// 418 the browser refused to show us? A cross-origin fetch that NetFree
+// blocks dies at the CORS check (the 418 shell has no
+// Access-Control-Allow-Origin), surfacing only as net::ERR_FAILED. The SW
+// is not bound by CORS (host_permissions), so re-fetching the URL here
+// reads the verdict directly. Confirms with the real status code — a
+// network-level failure (TLS/socket block, dead host) simply can't be
+// confirmed and stays an honest unfinished row.
+const PROBE_ERRORS = new Set([
+  'net::ERR_FAILED',                // classic CORS rejection
+  'net::ERR_BLOCKED_BY_RESPONSE',   // response blocked by the browser
+  'net::ERR_BLOCKED_BY_ORB',        // opaque-response blocking
+]);
+const probeCache = new Map();       // url → Promise<{is418, code}>
+function probe418(url) {
+  let p = probeCache.get(url);
+  if (p) return p;
+  p = (async () => {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), BLOCK_FETCH_TIMEOUT_MS);
+      const res   = await fetch(url, { credentials: 'omit', signal: ctrl.signal });
+      clearTimeout(timer);
+      if (res.status !== BLOCK_CODE) return { is418: false, code: null };
+      let code = null;
+      try {
+        const text = await res.text();
+        const m = text.match(/\/block\/#([^"'\s]+)/);
+        if (m) {
+          const json = JSON.parse(decodeURIComponent(m[1]));
+          if (json && typeof json.block === 'string') code = json.block;
+        }
+      } catch { /* code stays null — the 418 itself is already confirmed */ }
+      blockCodeCache.set(url, code);    // trackBlock's fetchBlockCode hits cache
+      return { is418: true, code };
+    } catch {
+      return { is418: false, code: null };   // couldn't reach it — no claim
+    }
+  })();
+  probeCache.set(url, p);
+  if (probeCache.size > 500) probeCache.clear();   // bounded
+  return p;
+}
+
 // NetFree block code → this extension's internal blockType (drives the
 // popup badge + colour). null = unrecognised → keep the existing guess.
 function blockTypeFromCode(code) {
@@ -924,53 +1042,71 @@ async function applyCodeToTab(tabId, url, code) {
 // webRequest — observe all completed requests
 // ─────────────────────────────────────────────────────────
 
+// Track a 418 into the per-tab block store (popup + badge). Reached from
+// BOTH onHeadersReceived (primary — the only event CORS-killed cross-origin
+// blocks ever hit) and onCompleted (fallback, e.g. a cached 418 that skips
+// onHeadersReceived), so it dedups by requestId.
+const tracked418 = new Set();
+async function trackBlock(details) {
+  const { tabId, url, type, timeStamp, initiator, method, ip, requestId } = details;
+  if (tabId === -1) return;                  // SW's own fetches (fetchBlockCode re-reads)
+  if (url.includes(NETFREE_HOST)) return;    // the filter's own UI
+  if (requestId != null) {
+    if (tracked418.has(requestId)) return;   // already handled via the other event
+    tracked418.add(requestId);
+    if (tracked418.size > 5000) tracked418.clear();  // bounded memory, ids never reused in-flight
+  }
+  const domain = extractDomain(url);
+
+  // File downloads get their own group so we can show a different
+  // UX (open-directly + disable-gate) without mixing them with
+  // generic 3rd-party blocks on the same domain.
+  const isFileDl = looksLikeFileDownload(url, type);
+
+  // Read NetFree's real block reason straight from the 418 body. This
+  // is the authoritative classification (deny/unknown/risk-type/…) for
+  // every blocked request, including sub-resources that never render a
+  // block page. Falls back to 'unknown' if the fetch fails. File
+  // downloads keep their dedicated UX group regardless of code.
+  const code     = await fetchBlockCode(url);
+  const codeType = blockTypeFromCode(code);
+  const blockType = isFileDl ? 'file_download' : (codeType ?? 'unknown');
+
+  // Serialize the store mutation so concurrent 418s can't clobber.
+  await enqueueTabWrite(tabId, async () => {
+    const data     = await getTabData(tabId);
+    const groupKey = `${domain}|${blockType}`;
+    let group = data.blocks.find(g => g.groupKey === groupKey);
+    if (!group) {
+      group = { domain, groupKey, blockType, requests: [] };
+      data.blocks.push(group);
+    }
+    group.requests.push({
+      url,
+      method:       method ?? 'GET',
+      ip:           ip ?? '',
+      resourceType: type,
+      timestamp:    timeStamp,
+      initiator:    initiator ?? '',
+      blockCode:    code ?? null,
+      harmless:     self.isHarmlessUrl
+                     ? self.isHarmlessUrl(url)
+                     : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
+    });
+    await setTabData(tabId, data);
+  });
+  await refreshBadge(tabId);
+}
+
 chrome.webRequest.onCompleted.addListener(
   async (details) => {
-    const { tabId, statusCode, url, type, timeStamp, initiator, method, ip } = details;
+    const { tabId, statusCode, url } = details;
     if (tabId === -1) return; // background / extension-internal
 
     // ── 1. NetFree block signal: HTTP 418 ──────────────────────────────────
+    //    (fallback route — onHeadersReceived normally tracks it first)
     if (statusCode === BLOCK_CODE && !url.includes(NETFREE_HOST)) {
-      const domain = extractDomain(url);
-
-      // File downloads get their own group so we can show a different
-      // UX (open-directly + disable-gate) without mixing them with
-      // generic 3rd-party blocks on the same domain.
-      const isFileDl = looksLikeFileDownload(url, type);
-
-      // Read NetFree's real block reason straight from the 418 body. This
-      // is the authoritative classification (deny/unknown/risk-type/…) for
-      // every blocked request, including sub-resources that never render a
-      // block page. Falls back to 'unknown' if the fetch fails. File
-      // downloads keep their dedicated UX group regardless of code.
-      const code     = await fetchBlockCode(url);
-      const codeType = blockTypeFromCode(code);
-      const blockType = isFileDl ? 'file_download' : (codeType ?? 'unknown');
-
-      // Serialize the store mutation so concurrent 418s can't clobber.
-      await enqueueTabWrite(tabId, async () => {
-        const data     = await getTabData(tabId);
-        const groupKey = `${domain}|${blockType}`;
-        let group = data.blocks.find(g => g.groupKey === groupKey);
-        if (!group) {
-          group = { domain, groupKey, blockType, requests: [] };
-          data.blocks.push(group);
-        }
-        group.requests.push({
-          url,
-          method:       method ?? 'GET',
-          ip:           ip ?? '',
-          resourceType: type,
-          timestamp:    timeStamp,
-          initiator:    initiator ?? '',
-          blockCode:    code ?? null,
-          harmless:     self.isHarmlessUrl
-                         ? self.isHarmlessUrl(url)
-                         : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
-        });
-        await setTabData(tabId, data);
-      });
-      await refreshBadge(tabId);
+      await trackBlock(details);
       return;
     }
 
