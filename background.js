@@ -363,6 +363,18 @@ async function srResult(result) {
   catch { /* non-fatal */ }
 }
 
+// Is the recorder window genuinely still open? Chrome RECYCLES window ids
+// after a window closes, so a bare chrome.windows.get(id) can succeed for an
+// unrelated window that inherited the id — a false "alive" that strands the
+// recording flag forever. Confirm the window actually hosts recorder.html.
+async function isRecorderWindowAlive(winId) {
+  if (winId == null) return false;
+  try {
+    const win = await chrome.windows.get(winId, { populate: true });
+    return (win.tabs || []).some(tb => (tb.url || '').includes('recorder.html'));
+  } catch { return false; }
+}
+
 // Close the recorder window as a backstop. The recorder page self-closes on
 // success/error, so this only matters if it crashed. Takes an explicit id
 // because the terminal handlers clear state (srGet → null) before calling it.
@@ -503,6 +515,7 @@ async function handleRecorderCancelled(err) {
   await srSet(null);
   await grecStop();
   clearWatchdog();
+  clearOriginRuleBackstop();
   // Cancel resets quietly; a real picker failure is surfaced.
   if (err) await srResult({ ok: false, error: `picker: ${err}` });
 }
@@ -515,6 +528,7 @@ async function handleRecorderAborted() {
   await srSet(null);
   await grecStop();
   clearWatchdog();
+  clearOriginRuleBackstop();
   await srResult({ ok: false, error: 'aborted' });
 }
 
@@ -535,6 +549,37 @@ async function stopScreenRecording() {
   const st = await srGet();
   if (st) await srSet({ ...st, status: 'uploading' });
   armWatchdog();
+  return { ok: true };
+}
+
+// Close EVERY window that hosts recorder.html — not just the one id we stored,
+// which may be stale. This is what actually stops an orphaned recording (and
+// its screen capture), regardless of how the state got confused.
+async function closeAllRecorderWindows() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const winIds = new Set();
+    for (const tb of tabs) {
+      if ((tb.url || '').includes('recorder.html') && tb.windowId != null) winIds.add(tb.windowId);
+    }
+    for (const wid of winIds) { try { await chrome.windows.remove(wid); } catch { /* gone */ } }
+  } catch { /* best effort */ }
+}
+
+// Cancel & DISCARD — the user wants the recording gone without filing a ticket
+// or uploading anything (a recording they didn't mean to start, or an orphaned
+// one from an earlier session). Wipe all state and force-close any recorder
+// window. State is cleared BEFORE closing so the window's beforeunload
+// (RECORDER_ABORTED) no-ops instead of re-writing state or flashing a toast.
+async function cancelScreenRecording() {
+  srFinalizing = true;                 // block any in-flight terminal handler
+  clearWatchdog();
+  clearOriginRuleBackstop();
+  await grecStop();
+  await srSet(null);
+  try { await chrome.storage.local.remove(['screenRecUpload', 'screenRecResult']); } catch { /* ok */ }
+  await closeAllRecorderWindows();
+  srFinalizing = false;
   return { ok: true };
 }
 
@@ -594,7 +639,15 @@ async function buildGlobalTrafficUrl() {
 // the first caller consumes the state (srGet → null) and later callers no-op.
 let srFinalizing = false;
 
-async function completeScreenRecording(filekey) {
+// Backstop: remove the recorder window's Origin-rewrite session rule
+// (declarativeNetRequest) in case that window died before its own cleanup ran.
+// Idempotent; the rule only rewrites Origin on requests to the stream host.
+const SR_DNR_RULE_ID = 9101;
+function clearOriginRuleBackstop() {
+  try { chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [SR_DNR_RULE_ID] }); } catch { /* ok */ }
+}
+
+async function completeScreenRecording(filekey, streamTrafficUrl) {
   if (srFinalizing) return;
   srFinalizing = true;
   let recWinId = null;
@@ -602,12 +655,18 @@ async function completeScreenRecording(filekey) {
     const st = await srGet();
     if (!st) return;                       // other channel already handled it
     recWinId = st.recorderWinId;
-    let trafficUrl = null, trafficFailed = false;
-    try {
-      trafficUrl = await buildGlobalTrafficUrl();
-    } catch (e) {
-      trafficFailed = true;
-      console.warn('[NetFree Inspector] traffic-recording upload failed:', e?.message || e);
+    // Prefer the real-stream (SSE) recording the recorder window already built
+    // and uploaded — it IS NetFree's own data. Only reconstruct from
+    // chrome.webRequest when the stream produced nothing (not behind the
+    // filter / stream unavailable).
+    let trafficUrl = streamTrafficUrl || null, trafficFailed = false;
+    if (!trafficUrl) {
+      try {
+        trafficUrl = await buildGlobalTrafficUrl();
+      } catch (e) {
+        trafficFailed = true;
+        console.warn('[NetFree Inspector] traffic-recording upload failed:', e?.message || e);
+      }
     }
     await grecStop();
     await finalizeScreenTicket(st, filekey, trafficUrl, trafficFailed);
@@ -616,6 +675,7 @@ async function completeScreenRecording(filekey) {
   } finally {
     srFinalizing = false;
     clearWatchdog();
+    clearOriginRuleBackstop();
     try { await chrome.storage.local.remove('screenRecUpload'); } catch { /* ok */ }
     await closeRecorderWindow(recWinId);
   }
@@ -654,6 +714,7 @@ async function failScreenRecording(error, phase) {
   } finally {
     srFinalizing = false;
     clearWatchdog();
+    clearOriginRuleBackstop();
     try { await chrome.storage.local.remove('screenRecUpload'); } catch { /* ok */ }
     await closeRecorderWindow(recWinId);
   }
@@ -671,7 +732,7 @@ async function handleRecorderMessage(msg) {
       armWatchdog();
       return;
     }
-    case 'RECORDER_DONE':  return completeScreenRecording(msg.filekey);
+    case 'RECORDER_DONE':  return completeScreenRecording(msg.filekey, msg.trafficUrl);
     case 'RECORDER_ERROR': return failScreenRecording(msg.error, msg.phase);
   }
 }
@@ -683,7 +744,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.screenRecUpload) return;
   const v = changes.screenRecUpload.newValue;
   if (!v) return;
-  if (v.type === 'RECORDER_DONE' && v.filekey) completeScreenRecording(v.filekey);
+  if (v.type === 'RECORDER_DONE' && v.filekey) completeScreenRecording(v.filekey, v.trafficUrl);
   else if (v.type === 'RECORDER_ERROR')        failScreenRecording(v.error, v.phase);
 });
 
@@ -698,6 +759,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (st.recorderWinId != null) { try { await chrome.windows.remove(st.recorderWinId); } catch { /* gone */ } }
     await srSet(null);
     await grecStop();
+    clearOriginRuleBackstop();
     await srResult({ ok: false, error: st.status === 'picking' ? 'picker-timeout' : 'recorder-lost' });
   }
 });
@@ -722,7 +784,7 @@ chrome.windows.onRemoved.addListener(async (winId) => {
     //    watchdog later opening a second, video-less ticket.
     const up = (await chrome.storage.local.get('screenRecUpload')).screenRecUpload;
     if (up) {
-      if (up.type === 'RECORDER_DONE' && up.filekey) { await completeScreenRecording(up.filekey); return; }
+      if (up.type === 'RECORDER_DONE' && up.filekey) { await completeScreenRecording(up.filekey, up.trafficUrl); return; }
       if (up.type === 'RECORDER_ERROR')              { await failScreenRecording(up.error, up.phase); return; }
     }
 
@@ -735,11 +797,11 @@ chrome.windows.onRemoved.addListener(async (winId) => {
     //    window is somehow still alive, leave it: its own report will drive
     //    the flow. No 'interrupted' toast for 'picking' (nothing recorded).
     if (st.status === 'picking' || st.status === 'recording') {
-      const alive = st.recorderWinId != null &&
-        await chrome.windows.get(st.recorderWinId).then(() => true).catch(() => false);
+      const alive = await isRecorderWindowAlive(st.recorderWinId);
       if (!alive) {
         await srSet(null);
         await grecStop();
+        clearOriginRuleBackstop();
         if (st.status === 'recording') await srResult({ ok: false, error: 'interrupted' });
       }
       return;
@@ -750,8 +812,7 @@ chrome.windows.onRemoved.addListener(async (winId) => {
     //    upload can't complete; fail cleanly (a ticket still opens if a demo
     //    happened, via the failScreenRecording path).
     if (st.status === 'uploading') {
-      const alive = st.recorderWinId != null &&
-        await chrome.windows.get(st.recorderWinId).then(() => true).catch(() => false);
+      const alive = await isRecorderWindowAlive(st.recorderWinId);
       if (!alive) await failScreenRecording('interrupted', 'upload');
     }
   } catch { /* best effort */ }
@@ -777,9 +838,16 @@ async function finalizeScreenTicket(state, filekey, trafficUrl, trafficFailed) {
     await chrome.storage.local.set({ pendingTicket: { subject, body, ts: Date.now() } });
   } catch { /* the form still opens; user can paste by hand */ }
 
+  // Same rule as the popup's buttons: open the category NetFree itself would
+  // for these blocks. Hardcoding t=site filed a "Website Review" even when the
+  // site was already open and only a file/video on it was blocked. The popup
+  // computes type/targetUrl from the real block codes and passes them here.
   const pageUrl   = ticket.url || '';
-  const u         = encodeURIComponent(pageUrl);
-  const ticketUrl = `https://netfree.link/app/#/tickets/new?u=${u}&r=${u}&t=site&bi=`;
+  const target    = ticket.targetUrl || pageUrl;
+  const type      = ticket.type || 'site';
+  const u         = encodeURIComponent(target);
+  const r         = encodeURIComponent(pageUrl);
+  const ticketUrl = `https://netfree.link/app/#/tickets/new?u=${u}&r=${r}&t=${encodeURIComponent(type)}&bi=`;
   try {
     const tab = await chrome.tabs.create({ url: ticketUrl, active: true });
     try { await chrome.windows.update(tab.windowId, { focused: true }); } catch { /* ok */ }
@@ -1047,6 +1115,19 @@ async function applyCodeToTab(tabId, url, code) {
 // blocks ever hit) and onCompleted (fallback, e.g. a cached 418 that skips
 // onHeadersReceived), so it dedups by requestId.
 const tracked418 = new Set();
+
+// Streaming media (HLS/DASH) loads a video as hundreds of numbered segments,
+// all under one .../manifest.ism (or .m3u8/.mpd). They are ONE logical block —
+// so we key them by the manifest and store a single entry per video, no matter
+// how many segments play. Returns the manifest key, or null for a normal URL.
+function mediaManifestKey(url) {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/^(.*\.(?:ism|m3u8|mpd))(?:\/|$)/i);
+    return m ? u.origin + m[1] : null;
+  } catch { return null; }
+}
+
 async function trackBlock(details) {
   const { tabId, url, type, timeStamp, initiator, method, ip, requestId } = details;
   if (tabId === -1) return;                  // SW's own fetches (fetchBlockCode re-reads)
@@ -1072,9 +1153,38 @@ async function trackBlock(details) {
   const codeType = blockTypeFromCode(code);
   const blockType = isFileDl ? 'file_download' : (codeType ?? 'unknown');
 
+  const mediaKey = mediaManifestKey(url);
+
   // Serialize the store mutation so concurrent 418s can't clobber.
   await enqueueTabWrite(tabId, async () => {
-    const data     = await getTabData(tabId);
+    const data = await getTabData(tabId);
+
+    // A streaming video is ONE block: fold every segment of the same manifest
+    // into a single stored entry (bumping a segment counter). Without this a
+    // playing video generates hundreds of distinct segment URLs, each stored
+    // and counted, ballooning the badge (135 for one video).
+    if (mediaKey) {
+      for (const g of data.blocks) {
+        const ex = g.requests.find(r => r.mediaKey === mediaKey);
+        if (ex) {
+          ex.segments = (ex.segments || 1) + 1;
+          if (code && ex.blockCode !== code) ex.blockCode = code;
+          await setTabData(tabId, data);
+          return;
+        }
+      }
+    } else {
+      // Non-streaming: count each blocked URL once (catches literal retries of
+      // the same request, which each arrive with a fresh requestId).
+      for (const g of data.blocks) {
+        const dup = g.requests.find(r => r.url === url);
+        if (dup) {
+          if (code && dup.blockCode !== code) { dup.blockCode = code; await setTabData(tabId, data); }
+          return;
+        }
+      }
+    }
+
     const groupKey = `${domain}|${blockType}`;
     let group = data.blocks.find(g => g.groupKey === groupKey);
     if (!group) {
@@ -1089,6 +1199,8 @@ async function trackBlock(details) {
       timestamp:    timeStamp,
       initiator:    initiator ?? '',
       blockCode:    code ?? null,
+      mediaKey:     mediaKey || undefined,
+      segments:     mediaKey ? 1 : undefined,
       harmless:     self.isHarmlessUrl
                      ? self.isHarmlessUrl(url)
                      : (self.isHarmlessHost ? self.isHarmlessHost(domain) : false),
@@ -1261,6 +1373,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     case 'SCREEN_RECORD_STATUS':
       srGet().then((state) => reply({ state }));
       return true;
+
+    // Self-heal: the popup calls this when it sees an "active" recording flag,
+    // to confirm a real recorder window is actually behind it. An interrupted
+    // session (window closed without a clean report, SW asleep so onRemoved
+    // never fired) can strand the flag at 'recording' and make the popup show
+    // a phantom recording the user never started. If the window is gone, clear
+    // the state so the UI returns to idle.
+    case 'SCREEN_RECORD_CANCEL':
+      cancelScreenRecording().then(reply);
+      return true;
+
+    case 'VERIFY_SCREEN_REC': {
+      (async () => {
+        const st = await srGet();
+        if (!st) { reply({ live: false }); return; }
+        const alive = await isRecorderWindowAlive(st.recorderWinId);
+        if (!alive && ['picking', 'recording', 'uploading'].includes(st.status)) {
+          await srSet(null);
+          await grecStop();
+          clearWatchdog();
+          clearOriginRuleBackstop();
+          reply({ live: false, cleared: true });
+          return;
+        }
+        reply({ live: !!alive, status: st.status });
+      })();
+      return true;
+    }
 
     // ── True block reason for a set of URLs ─────────────────────────────
     // The popup can't fetch arbitrary domains (its CSP connect-src only

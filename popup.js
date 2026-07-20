@@ -30,6 +30,9 @@ const T = {
     openTicket:       'פתח בקשה ב-NetFree ↗',
     sendForReview:    'שלח לבדיקה ↗',
     sendVideoForReview: 'שלח סרטון לבדיקה ↗',
+    sendFileForReview: 'שלח קובץ לבדיקה ↗',
+    videoCostNote:    'בדיקת סרטון עולה נקודה אחת',
+    notRequestable:   'לא ניתן לפתוח בקשה על חסימה זו',
     openFileDirect:   'פתח קובץ ישירות ↗',
     disableWarnGate:  'בטל את ההתראה ב-NetFree ↗',
     suggestHarmless:  'הצע להוסיף לרשימת פרסומות/מעקב',
@@ -54,6 +57,10 @@ const T = {
     ticketVideoIntro:      'שלום,\nאני רוצה לצפות בסרטון הבא. אבקש לבדוק ולאשר אותו. תודה רבה.',
     ticketVideoLinkLabel:  'קישור ישיר לסרטון',
     ticketVideoLinksLabel: 'קישורים ישירים',
+    ticketFileSubject:     (host) => `בקשת בדיקת קובץ - ${host}`,
+    ticketFileIntro:       'שלום,\nהקובץ הבא נחסם בהודעה "סוג הקובץ אינו נתמך בסינון האוטומטי", והוא נחוץ כדי שהדף יעבוד. האתר עצמו כבר פתוח. אבקש לבדוק ולאשר את הקובץ. תודה רבה.',
+    ticketFileLinkLabel:   'קישור ישיר לקובץ',
+    ticketFileLinksLabel:  'קישורים ישירים',
     recordScreen:      'הקלט מסך',
     recordingScreen:   'מקליט מסך…',
     choosingSource:    'בחר מה להקליט…',
@@ -95,6 +102,9 @@ const T = {
     openTicket:       'Open NetFree Request ↗',
     sendForReview:    'Send for review ↗',
     sendVideoForReview: 'Send video for review ↗',
+    sendFileForReview: 'Send file for review ↗',
+    videoCostNote:    'A video review costs 1 point',
+    notRequestable:   'This block can\'t be requested',
     openFileDirect:   'Open file directly ↗',
     disableWarnGate:  'Disable warning in NetFree ↗',
     suggestHarmless:  'Suggest as ad / tracker (harmless)',
@@ -119,6 +129,10 @@ const T = {
     ticketVideoIntro:      'Hello,\nI would like to watch the following video. Please review and approve it. Thank you.',
     ticketVideoLinkLabel:  'Direct link',
     ticketVideoLinksLabel: 'Direct links',
+    ticketFileSubject:     (host) => `File review request — ${host}`,
+    ticketFileIntro:       'Hello,\nThe following file is blocked with "this type of file is not supported by automatic filtering", and it is needed for the page to work. The website itself is already open. Please review and approve the file. Thank you.',
+    ticketFileLinkLabel:   'Direct link to the file',
+    ticketFileLinksLabel:  'Direct links',
     recordScreen:      'Record screen',
     recordingScreen:   'Recording screen…',
     choosingSource:    'Choose what to record…',
@@ -223,9 +237,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('pageTicketBtn').addEventListener('click', async () => {
     if (isNewSiteRequest()) {
       await stashNewSiteTicket();
-    } else {
-      await stashPendingTicket();
+      openTicketWindow(makeTicketUrl(tabUrl, tabUrl, 'site'));
+      return;
     }
+    // The blue page button is the GENERAL request: it describes the page and
+    // attaches a full traffic recording of everything blocked on it. The
+    // file-specific review (t=file, pointing at the blocked file) is ONLY the
+    // green "Send file for review" button on the card — never this one.
+    await stashPendingTicket();
     openTicketWindow(makeTicketUrl(tabUrl, tabUrl, 'site'));
   });
   document.getElementById('optionsBtn').addEventListener('click', () => {
@@ -250,6 +269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const srEls = screenRecEls();
   if (srEls.btn)  srEls.btn.addEventListener('click', startScreenRec);
   if (srEls.stop) srEls.stop.addEventListener('click', stopScreenRec);
+  if (srEls.cancel) srEls.cancel.addEventListener('click', cancelScreenRec);
   await refreshScreenRecUI();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
@@ -397,7 +417,7 @@ function render() {
   // card below is just noise, so skip it.
   list.innerHTML = '';
   if (!newSite) {
-    for (const group of visibleBlocks) {
+    for (const group of displayGroups(visibleBlocks)) {
       list.appendChild(buildCard(group, t));
     }
   }
@@ -424,7 +444,10 @@ function buildCard(group, t) {
   // The category (site vs video) depends on what's blocked: video URLs
   // go through NetFree's t=video review flow, others stay generic.
   const kind         = ticketKindFor(group);
-  const ticketUrl    = makeTicketUrl(tabUrl, tabUrl, kind.type);
+  // File/video reviews must reference the BLOCKED resource; a site request
+  // still describes the parent page the user is trying to use.
+  const ticketTarget = (!kind.type || kind.type === 'site') ? tabUrl : representativeUrl(group);
+  const ticketUrl    = makeTicketUrl(ticketTarget, tabUrl, kind.type || 'site');
   const ticketLabel  = t[kind.labelKey] || t.openTicket;
 
   // Show up to 4 requests; collapse the rest
@@ -441,10 +464,20 @@ function buildCard(group, t) {
   // Generic blocks rely on the single page-level request button, so they
   // get no action row at all — that keeps a long list (many ad/tracker
   // blocks) compact.
-  const showActions = kind.type === 'video';
+  // Video AND file reviews get their own action button: both are requests
+  // about a specific blocked resource, which the page-level button can't
+  // express. Generic/no-request blocks keep the compact, button-less card.
+  const showActions = kind.type === 'video' || kind.type === 'file';
+  // Distinct look per action so the card's "Send file for review" (green, file
+  // icon) is never mistaken for the page-level blue "Open NetFree Request".
+  // Video reviews (which cost a point) get their own violet + play icon.
+  const btnVariant = kind.type === 'file' ? ' file-btn' : kind.type === 'video' ? ' video-btn' : '';
+  const fileIcon  = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+  const videoIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  const ticketIcon = kind.type === 'file' ? fileIcon : kind.type === 'video' ? videoIcon : fileIcon;
   const actionsHtml = showActions ? `
-      <button class="card-action-btn ticket-btn" data-ticket-url="${esc(ticketUrl)}" type="button">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      <button class="card-action-btn ticket-btn${btnVariant}" data-ticket-url="${esc(ticketUrl)}" type="button">
+        ${ticketIcon}
         ${esc(ticketLabel)}
       </button>
       <button class="card-action-btn copy-group-btn icon-only" title="${esc(t.copyUrl)}" aria-label="${esc(t.copyUrl)}">
@@ -453,24 +486,54 @@ function buildCard(group, t) {
     ` : '';
 
   const card = document.createElement('div');
-  card.className = 'block-card';
+  // A requestable file/video block gets a highlighted card so it's obvious it
+  // needs an action, distinct from the ad/tracker blocks around it.
+  card.className = 'block-card'
+    + (kind.type === 'file'  ? ' review-card review-file'  : '')
+    + (kind.type === 'video' ? ' review-card review-video' : '');
 
+  // Each card starts COLLAPSED — just badge + host + count + a chevron — so a
+  // page with hundreds of blocks stays a short list. Clicking the head reveals
+  // the file-type note and the individual blocked URLs. The action button and
+  // any point-cost / not-requestable warning stay OUTSIDE the collapse, always
+  // visible, so the user can act (and see a cost warning) without expanding.
   card.innerHTML = `
-    <div class="block-card-head">
+    <div class="block-card-head" role="button" tabindex="0" aria-expanded="false">
       <span class="block-badge ${meta.badgeClass}">${esc(meta.label(t))}</span>
       <span class="block-domain">${esc(domain)}</span>
       <span class="block-count-pill">${esc(t.requests(requests.length))}</span>
+      <svg class="card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
 
-    ${blockType === 'file_type' ? `<div style="margin:0 12px 6px;padding:7px 9px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:11px;line-height:1.4;color:#1E3A8A;">${esc(t.fileTypeSub)}</div>` : ''}
+    ${blockType === 'file_type' ? `<div style="margin:0 11px 6px;padding:6px 9px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:10.5px;line-height:1.35;color:#1E3A8A;">${esc(t.fileTypeSub)}</div>` : ''}
+    ${kind.costsPoint ? `<div style="margin:0 12px 6px;padding:6px 9px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;font-size:11px;line-height:1.4;color:#92400E;">${esc(t.videoCostNote)}</div>` : ''}
+    ${kind.type === null ? `<div style="margin:0 12px 6px;padding:6px 9px;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:6px;font-size:11px;line-height:1.4;color:#4B5563;">${esc(t.notRequestable)}</div>` : ''}
 
-    <div class="block-requests" id="reqs-${esc(domain)}">
-      ${shown.map(req => reqRowHtml(req, { isFileDl })).join('')}
-      ${hiddenCount > 0 ? `<div class="more-rows">${esc(t.moreRequests(hiddenCount))}</div>` : ''}
+    <div class="card-collapse" hidden>
+      <div class="block-requests" id="reqs-${esc(domain)}">
+        ${shown.map(req => reqRowHtml(req, { isFileDl })).join('')}
+        ${hiddenCount > 0 ? `<div class="more-rows">${esc(t.moreRequests(hiddenCount))}</div>` : ''}
+      </div>
     </div>
 
     ${showActions ? `<div class="block-card-actions">${actionsHtml}</div>` : ''}
   `;
+
+  // Expand / collapse the blocked-URL list on head click (or keyboard).
+  const head     = card.querySelector('.block-card-head');
+  const collapse = card.querySelector('.card-collapse');
+  if (head && collapse) {
+    const toggle = () => {
+      const open = collapse.hasAttribute('hidden');
+      if (open) collapse.removeAttribute('hidden'); else collapse.setAttribute('hidden', '');
+      card.classList.toggle('expanded', open);
+      head.setAttribute('aria-expanded', String(open));
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  }
 
   // Per-row copy buttons
   card.querySelectorAll('.req-copy-btn').forEach(btn => {
@@ -781,6 +844,7 @@ function screenRecEls() {
     title:  document.getElementById('screenRecTitle'),
     time:   document.getElementById('screenRecTime'),
     stop:   document.getElementById('screenRecStopBtn'),
+    cancel: document.getElementById('screenRecCancelBtn'),
   };
 }
 
@@ -790,10 +854,15 @@ async function startScreenRec() {
   // Pass the localized ticket text now (we know the language + page here);
   // the background appends the [video-embedded#] line once upload returns a
   // filekey. `url` seeds the new-ticket form's page reference.
+  // A screen recording is a GENERAL problem demonstration (video + traffic
+  // recording), so it files a general request — not a file review. Only the
+  // green "Send file for review" button files a file review.
   const ticket = {
     subject:      t.screenTicketSubject(host),
     bodyIntro:    t.screenTicketIntro(host === '—' ? '' : host),
     url:          tabUrl,
+    type:         'site',
+    targetUrl:    tabUrl,
     // The background appends "<label>: <view-url>" for the traffic
     // recording captured alongside the video — localized here, used there.
     trafficLabel:      lang === 'he' ? 'הקלטת תעבורה' : 'Traffic recording',
@@ -819,6 +888,22 @@ async function stopScreenRec() {
   if (els.time)  els.time.textContent = '';
   stopSrTimer();
   try { await chrome.runtime.sendMessage({ type: 'SCREEN_RECORD_STOP' }); } catch { /* ok */ }
+}
+
+// Cancel & discard — no upload, no ticket. Force-clears state and closes any
+// recorder window (handles a recording the user didn't mean to start, or one
+// orphaned by an earlier interrupted session).
+async function cancelScreenRec() {
+  const els = screenRecEls();
+  if (els.cancel) els.cancel.disabled = true;
+  stopSrTimer();
+  // Clear the flags DIRECTLY from the popup so the UI goes idle no matter what
+  // state the service worker is in (even if it's running older code). Then ask
+  // the background to close any real recorder window that's still capturing.
+  try { await chrome.storage.local.remove(['screenRec', 'screenRecResult', 'screenRecUpload']); } catch { /* ok */ }
+  try { await chrome.runtime.sendMessage({ type: 'SCREEN_RECORD_CANCEL' }); } catch { /* ok */ }
+  // Force the idle view immediately (don't wait on storage round-trips).
+  applyScreenRecState(null, null);
 }
 
 function fmtElapsed(ms) {
@@ -867,7 +952,14 @@ function applyScreenRecState(state, result) {
   els.active.hidden      = true;
   els.btn.style.display  = '';
   els.stop.disabled      = false;
+  if (els.cancel) els.cancel.disabled = false;
   stopSrTimer();
+
+  // A user-initiated cancel is not an outcome worth toasting — mark it seen.
+  if (result && result.error === 'cancelled' && !result._seen) {
+    chrome.storage.local.set({ screenRecResult: { ...result, _seen: true } }).catch(() => {});
+    return;
+  }
 
   // Announce a recent outcome once, then mark it seen so reopening the popup
   // doesn't re-toast it.
@@ -890,7 +982,17 @@ function applyScreenRecState(state, result) {
 async function refreshScreenRecUI() {
   try {
     const r = await chrome.storage.local.get(['screenRec', 'screenRecResult']);
-    applyScreenRecState(r.screenRec || null, r.screenRecResult || null);
+    let state = r.screenRec || null;
+    // Don't trust a stale "recording" flag: verify a real recorder window is
+    // behind it. A ghost from an interrupted session is cleared by the
+    // background, and we show idle instead of a recording the user never began.
+    if (state && ['picking', 'recording', 'uploading'].includes(state.status)) {
+      try {
+        const v = await chrome.runtime.sendMessage({ type: 'VERIFY_SCREEN_REC' });
+        if (v && !v.live) state = null;
+      } catch { /* background unreachable — fall back to the stored state */ }
+    }
+    applyScreenRecState(state, r.screenRecResult || null);
   } catch { /* storage unavailable — leave the idle button showing */ }
 }
 
@@ -909,14 +1011,20 @@ function buildTicketContent(withUrlList = false, focusGroup = null) {
   // appended later by prepareTicketContent. No "I'm using this
   // site, here are console errors" boilerplate.
   const focusKind = focusGroup ? ticketKindFor(focusGroup).type : null;
-  if (focusKind === 'video' && focusGroup) {
-    const subject = t.ticketVideoSubject(host);
-    const urls    = focusGroup.requests.map(r => r.url);
-    const linkLabel = urls.length > 1 ? t.ticketVideoLinksLabel : t.ticketVideoLinkLabel;
+  if ((focusKind === 'video' || focusKind === 'file') && focusGroup) {
+    const isFile  = focusKind === 'file';
+    const subject = isFile ? t.ticketFileSubject(host) : t.ticketVideoSubject(host);
+    // One line per LOGICAL file: a streaming video is hundreds of segments of
+    // the same media, and pasting 152 near-identical URLs helps nobody.
+    const urls    = uniqueFiles(focusGroup.requests).map(r => r.url);
+    const linkLabel = urls.length > 1
+      ? (isFile ? t.ticketFileLinksLabel : t.ticketVideoLinksLabel)
+      : (isFile ? t.ticketFileLinkLabel  : t.ticketVideoLinkLabel);
     const urlBlock = urls.length === 1
       ? `${linkLabel}: ${urls[0]}`
       : `${linkLabel}:\n${urls.map(u => `  • ${u}`).join('\n')}`;
-    const body = `${t.ticketVideoIntro}\n\n${urlBlock}`;
+    const intro = isFile ? t.ticketFileIntro : t.ticketVideoIntro;
+    const body  = `${intro}\n\n${urlBlock}`;
     return buildClipboard(subject, body);
   }
 
@@ -971,7 +1079,8 @@ async function prepareTicketContent(focusGroup = null) {
   // For video-focused tickets we always want the short body — the
   // URL list fallback only makes sense for generic site tickets
   // where the body lists every block on the page.
-  const isVideoFocus = focusGroup && ticketKindFor(focusGroup).type === 'video';
+  const focusType    = focusGroup ? ticketKindFor(focusGroup).type : null;
+  const isVideoFocus = focusType === 'video' || focusType === 'file';
   const { subject, body } = buildTicketContent(/* withUrlList */ !url && !isVideoFocus, focusGroup);
 
   let finalBody = body;
@@ -1211,25 +1320,185 @@ function isVideoUrl(url) {
   return false;
 }
 
-// Decide which ticket category + button label fit this group of
-// blocked requests.
-//   • Explicit video URLs (youtube/vimeo/.mp4 etc.) → NetFree's
-//     t=video flow.
-//   • file_type blocks (netfree_full_logo.svg with no .avif) are
-//     almost always videos NetFree's auto-filter couldn't classify
-//     — typically temp-CDN files from video editors. The human
-//     review path is via the attached traffic recording, so we use
-//     t=video and the "Send video for review" label too.
-//   • Everything else stays the generic site-request flow.
-function ticketKindFor(group) {
-  // Only the real-evidence path counts as video now: an actual video host
-  // or file extension. We no longer infer "video" from file_type /
-  // sub_frame / media block classes — those default to a generic site
-  // request ("something on this page isn't loading").
-  if (group.requests.some(r => isVideoUrl(r.url))) {
-    return { type: 'video', labelKey: 'sendVideoForReview' };
-  }
+// NetFree's block code → the request category its OWN block page would open
+// (that page computes `t = currentBlock.typeRequest || "site"`). Mirroring
+// this table is what keeps our form in the same queue as NetFree's.
+//
+// Verified live on videos-cloudfront-usp.jwpsrv.com (a JW Player HLS stream):
+// the .ts segments answer 418 with block code "risk-type" — "This type of
+// file is not supported by automatic filtering" — while the .m3u8 manifest
+// returns 200. So a blocked streaming video is a FILE review, not a video
+// one: NetFree never classified it as video. Sending t=video there would be
+// both the wrong queue AND would spend one of the user's points.
+//
+// null = NetFree offers no request form for that code (noRequest), so we
+// must not open a futile one.
+const REQUEST_TYPE_BY_CODE = {
+  'risk-type':     'file',
+  'share-file':    'file',
+  'unknown-file':  'file',
+  'unknown-video': 'video',   // the only code that costs the user a point
+  'unknown':       'site',
+  'error':         'error',
+  'deny':           null,
+  'black-list':     null,
+  'default-block':  null,
+  'myset':          null,
+  'time':           null,
+  'tags':           null,
+};
+
+// undefined = we have no code (or an unrecognised one) → caller falls back.
+function requestTypeForCode(code) {
+  if (!code) return undefined;
+  return Object.prototype.hasOwnProperty.call(REQUEST_TYPE_BY_CODE, code)
+    ? REQUEST_TYPE_BY_CODE[code]
+    : undefined;
+}
+
+function kindFromType(type) {
+  if (type === 'video') return { type: 'video', labelKey: 'sendVideoForReview', costsPoint: true };
+  if (type === 'file')  return { type: 'file',  labelKey: 'sendFileForReview' };
+  if (type === 'error') return { type: 'error', labelKey: 'openTicket' };
   return { type: 'site', labelKey: 'openTicket' };
+}
+
+// Streaming media fetches hundreds of numbered segments off ONE manifest —
+// verified live: 152 blocked requests that were all one video under a single
+// .../manifest.ism. Collapse them to the logical file so the user files one
+// review instead of 152 (and so counts shown in the UI mean something).
+function logicalFileKey(url) {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/^(.*\.(?:ism|m3u8|mpd))(?:\/|$)/i);
+    if (m) return u.origin + m[1];
+    // Otherwise fold a trailing segment counter (…/chunk-12.ts → …/chunk-N.ts)
+    return u.origin + u.pathname.replace(/\d+(?=\.[a-z0-9]+$)/i, 'N');
+  } catch { return url; }
+}
+
+// One entry per logical file, ordered by how many blocked segments each file
+// produced (most first). A page can host SEVERAL videos (e.g. a conference
+// page with one player per session, each with its own manifest hash); they
+// must stay separate review lines — only the segments WITHIN a video
+// collapse. The dominant file — the video the user was actually watching —
+// leads, so it becomes the form's target URL and the first link in the body.
+function uniqueFiles(requests) {
+  const seen = new Map();               // key → { r, n }
+  for (const r of requests) {
+    const k = logicalFileKey(r.url);
+    const e = seen.get(k);
+    if (e) e.n++;
+    else seen.set(k, { r, n: 1 });
+  }
+  return [...seen.values()].sort((a, b) => b.n - a.n).map(e => e.r);
+}
+
+// Decide which ticket category + button label fit this group of blocked
+// requests. The authoritative signal is NetFree's own block code, which the
+// background already fetches per request; URL shape is only a fallback for
+// when that fetch failed (a CDN hash URL like the JW Player one has neither a
+// known video host nor a video extension, which is exactly how this used to
+// mis-file a video/file block as a "Website Review").
+function ticketKindFor(group) {
+  const RANK = { site: 1, error: 1, file: 2, video: 3 };
+  let bestType = null, sawCode = false, sawRequestable = false;
+  for (const r of group.requests) {
+    const type = requestTypeForCode(r.blockCode);
+    if (type === undefined) continue;                 // no/unknown code
+    sawCode = true;
+    if (type === null) continue;                      // this code isn't requestable
+    sawRequestable = true;
+    if (!bestType || RANK[type] > RANK[bestType]) bestType = type;
+  }
+  if (sawRequestable) return kindFromType(bestType);
+  if (sawCode) return { type: null, labelKey: null };  // every code was noRequest
+  // No usable codes at all → fall back to explicit video host/extension.
+  if (group.requests.some(r => isVideoUrl(r.url))) return kindFromType('video');
+  return kindFromType('site');
+}
+
+// The single request the page-level button should open. Filing a "Website
+// Review" for a site that is already open — because only its video segments
+// are blocked — puts the ticket in the wrong queue; that was the bug.
+function pageTicketKind() {
+  // The page document itself is blocked → it genuinely is a site request.
+  if (mainFrameBlock()) return { type: 'site', group: null, targetUrl: tabUrl };
+
+  // Otherwise the sub-resource blocks decide. Skip harmless ad/tracker noise
+  // (never spend a review request on analytics) and file_download, which has
+  // its own dedicated UX.
+  const groups = blocks
+    .map(g => ({ ...g, requests: g.requests.filter(r => showHarmless || !r.harmless) }))
+    .filter(g => g.requests.length && g.blockType !== 'file_download');
+
+  const RANK = { site: 1, error: 1, file: 2, video: 3 };
+  let best = null;
+  for (const g of groups) {
+    const kind = ticketKindFor(g);
+    if (!kind.type) continue;                          // not requestable
+    if (!best || RANK[kind.type] > RANK[best.kind.type]) best = { g, kind };
+  }
+  if (!best) return { type: 'site', group: null, targetUrl: tabUrl };
+  return {
+    type: best.kind.type,
+    group: best.g,
+    // For a file/video review NetFree needs the BLOCKED resource, not the
+    // page — the page loaded fine (its manifest returned 200; only the
+    // segments 418), so sending the page URL asks about the wrong thing.
+    targetUrl: best.kind.type === 'site' ? tabUrl : representativeUrl(best.g),
+  };
+}
+
+function representativeUrl(group) {
+  const files = uniqueFiles(group.requests);
+  return (files[0] && files[0].url) || tabUrl;
+}
+
+// Order + consolidate the cards for display:
+//   • ONE card per host — a page hammering the same place (e.g.
+//     analytics.ivdu.org firing many requests) should read as a single
+//     entry, not a card per request or per momentary classification.
+//   • Actionable FILE/VIDEO reviews float to the TOP — that's the block the
+//     user can actually do something about; ad/tracker noise sinks below.
+//   • file_download keeps its own dedicated card (distinct fix flow) and
+//     sits last.
+const _SEVERITY = { blacklisted: 4, user_settings: 3, file_type: 2, not_whitelisted: 1, unknown: 0 };
+function mostSevereType(types) {
+  let best = 'unknown', rank = -1;
+  for (const bt of types) { const r = _SEVERITY[bt] ?? 0; if (r > rank) { rank = r; best = bt; } }
+  return best;
+}
+
+function displayGroups(groups) {
+  const fileDl = groups.filter(g => g.blockType === 'file_download');
+  const rest   = groups.filter(g => g.blockType !== 'file_download');
+
+  // Merge every non-file_download group of the same host into one.
+  const byHost = new Map();
+  for (const g of rest) {
+    const e = byHost.get(g.domain);
+    if (e) { e.requests.push(...g.requests); e.types.push(g.blockType); }
+    else byHost.set(g.domain, { domain: g.domain, requests: [...g.requests], types: [g.blockType] });
+  }
+
+  const merged = [...byHost.values()].map(e => {
+    const group = { domain: e.domain, requests: e.requests, blockType: 'unknown' };
+    const kind  = ticketKindFor(group).type;
+    const reviewable = kind === 'file' || kind === 'video';
+    // Badge follows the actionable kind when there is one, else the most
+    // severe of the merged classifications.
+    group.blockType  = reviewable ? 'file_type' : mostSevereType(e.types);
+    group._reviewable = reviewable;
+    return group;
+  });
+
+  // File/video reviews first; within each band, biggest offenders first.
+  merged.sort((a, b) =>
+    (a._reviewable === b._reviewable ? 0 : a._reviewable ? -1 : 1)
+    || b.requests.length - a.requests.length);
+
+  return merged.concat(fileDl);
 }
 
 // The block group representing the main page itself (a main_frame request).

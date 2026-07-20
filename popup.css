@@ -16,6 +16,9 @@
   --amber-soft:    #FFFBEB;
   --violet:        #7C3AED;
   --violet-soft:   #F5F3FF;
+  --green:         #059669;
+  --green-hover:   #047857;
+  --green-soft:    #ECFDF5;
   --cyan:          #0E7490;
   --cyan-soft:     #ECFEFF;
   --emerald:       #059669;
@@ -195,7 +198,7 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 18px;
+  padding: 5px 14px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
@@ -224,10 +227,10 @@ body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 14px 14px 10px;
-  padding: 12px 14px;
-  border-radius: var(--r-lg);
+  gap: 9px;
+  margin: 8px 12px 6px;
+  padding: 7px 11px;
+  border-radius: var(--r-md);
   background: var(--surface);
   border: 1px solid var(--line);
   transition: background var(--ease), border-color var(--ease);
@@ -253,16 +256,16 @@ body {
 .summary-body { min-width: 0; }
 
 .summary-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
   letter-spacing: -.1px;
 }
 
 .summary-sub {
-  font-size: 11.5px;
+  font-size: 10.5px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 /* ════════════════════════════════════════
@@ -270,12 +273,15 @@ body {
    ════════════════════════════════════════ */
 .blocks-list {
   flex: 1;
+  min-height: 0;            /* the ONLY scroller — without this the list grows
+                              past the popup and pushes Record screen / footer
+                              below the fold, forcing a scroll to reach them */
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 14px 10px;
+  padding: 2px 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
@@ -327,15 +333,41 @@ body {
 }
 .block-card:hover { border-color: var(--line-strong); }
 
+/* A block that needs a review request stands out with a coloured ring +
+   tinted header, so it's obviously actionable next to plain ad/tracker cards.
+   File review → green (matches its button); video review → violet. */
+.block-card.review-file {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1.5px var(--green), 0 2px 8px rgba(5, 150, 105, .12);
+}
+.block-card.review-file .block-card-head { background: var(--green-soft); }
+.block-card.review-video {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 1.5px var(--violet), 0 2px 8px rgba(124, 58, 237, .12);
+}
+.block-card.review-video .block-card-head { background: var(--violet-soft); }
+.block-card.review-card:hover { border-color: transparent; }
+
 /* Hide the colored top strip from old design */
 .block-card-strip { display: none; }
 
 .block-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 7px;
+  padding: 6px 11px;
+  cursor: pointer;
+  user-select: none;
 }
+.block-card-head:hover { background: var(--surface); }
+
+/* Expand/collapse chevron — points down when collapsed, up when open. */
+.card-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--ease);
+}
+.block-card.expanded .card-chevron { transform: rotate(180deg); }
 
 /* Badge → quiet capsule, colored dot + muted label */
 .block-badge {
@@ -402,7 +434,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px;
+  padding: 3px 11px;
   transition: background var(--ease);
 }
 .req-row:hover { background: var(--surface); }
@@ -494,11 +526,11 @@ body {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  width: calc(100% - 28px);
-  margin: 0 14px 10px;
-  padding: 11px 12px;
+  width: calc(100% - 24px);
+  margin: 0 12px 8px;
+  padding: 9px 12px;
   border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: #fff;
   background: var(--accent);
@@ -519,6 +551,27 @@ body {
 .card-action-btn.ticket-btn:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+/* File review — green, so it never reads as the blue page-level request.
+   Three-class selector beats .card-action-btn.ticket-btn above. */
+.card-action-btn.ticket-btn.file-btn {
+  background: var(--green);
+  border-color: var(--green);
+}
+.card-action-btn.ticket-btn.file-btn:hover {
+  background: var(--green-hover);
+  border-color: var(--green-hover);
+}
+
+/* Video review — violet (and it costs a point, so it should stand apart). */
+.card-action-btn.ticket-btn.video-btn {
+  background: var(--violet);
+  border-color: var(--violet);
+}
+.card-action-btn.ticket-btn.video-btn:hover {
+  background: #6D28D9;
+  border-color: #6D28D9;
 }
 
 /* Icon-only variant (used by the per-card copy button) */
@@ -546,10 +599,48 @@ body {
   display: flex;
   justify-content: center;
 }
-/* The active banner is display:flex below, which overrides the `hidden`
-   attribute's default styling — force hidden to always win, otherwise
-   the banner shows even when idle. */
-.screen-rec-zone [hidden] { display: none !important; }
+/* The active banner sets display:flex below, which overrides the `hidden`
+   attribute's default display:none — so force hidden to win. Target the banner
+   DIRECTLY (not via a container class) so a layout/class change can never
+   silently un-hide it again: when JS sets els.active.hidden = true, it hides. */
+.screen-rec-active[hidden],
+#screenRecZone [hidden] { display: none !important; }
+
+/* ── Top action toolbar: Reload & Record + Record screen side-by-side ── */
+.top-actions {
+  flex-shrink: 0;
+  padding: 6px 12px 2px;
+}
+.top-actions-row {
+  display: flex;
+  gap: 6px;
+}
+/* Filled so both read clearly as BUTTONS, not like the outlined white block
+   cards below. Primary = solid blue; secondary = solid grey fill. */
+.toolbar-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-strong, #E9EEF5);
+  border: 1px solid var(--line-strong);
+  transition: background var(--ease), color var(--ease),
+              border-color var(--ease), transform 80ms ease;
+}
+.toolbar-btn:hover  { background: var(--line); }
+.toolbar-btn:active { transform: scale(.98); }
+.toolbar-btn.primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toolbar-btn.primary:hover { background: var(--accent-hover); }
 
 .screen-rec-btn {
   display: inline-flex;
@@ -616,6 +707,24 @@ body {
 .rec-stop-btn:hover { background: #B91C1C; }
 .rec-stop-btn:disabled { opacity: .6; cursor: default; }
 
+/* Cancel & discard — a quiet ✕ next to Stop, for killing an unwanted or
+   orphaned recording without uploading anything. */
+.rec-cancel-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease);
+}
+.rec-cancel-btn:hover { background: var(--bg); color: var(--red); border-color: var(--red); }
+.rec-cancel-btn:disabled { opacity: .5; cursor: default; }
+
 /* ════════════════════════════════════════
    FOOTER — primary Reload + tiny icon row
    ════════════════════════════════════════ */
@@ -624,7 +733,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px 12px;
+  padding: 5px 12px 6px;
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
@@ -668,6 +777,9 @@ body {
   gap: 2px;
   flex-shrink: 0;
 }
+/* Footer now holds only the small utility icons (the main actions moved to
+   the top toolbar) — keep them tucked at the end, same side as before. */
+.footer { justify-content: flex-end; }
 
 /* ════════════════════════════════════════
    TOAST
