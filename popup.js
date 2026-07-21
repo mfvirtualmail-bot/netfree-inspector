@@ -18,6 +18,7 @@ const T = {
     notWhitelisted:   '⏳ לא נבדק עדיין',
     userSettings:     '⚙️ הגדרות אישיות',
     fileType:         '📄 קובץ — בדיקה',
+    videoReview:      '🎬 וידאו — בדיקה',
     fileTypeSub:      'הסינון האוטומטי של נט פרי לא הצליח לסווג את הקובץ. הקלטת התעבורה שמצורפת לבקשה מאפשרת לנציג נט פרי לבדוק אותו ידנית.',
     fileDownload:     '⚠️ בעיה בהורדת קובץ',
     fileDownloadProblem: 'הורדה אוטומטית של קובץ נחסמה ע"י "התראת שיבוש קבצים" של נט פרי. הקובץ שירדת ריק או פגום.',
@@ -90,6 +91,7 @@ const T = {
     notWhitelisted:   '⏳ Not reviewed',
     userSettings:     '⚙️ Your settings',
     fileType:         '📄 File — review',
+    videoReview:      '🎬 Video — review',
     fileTypeSub:      'NetFree\'s automatic filter couldn\'t classify this file. The traffic recording attached to your request lets a NetFree agent review it manually.',
     fileDownload:     '⚠️ Download problem',
     fileDownloadProblem: 'An automatic file download was blocked by NetFree\'s file-distortion warning. The file you got is empty or broken.',
@@ -171,6 +173,11 @@ const BLOCK_META = {
     badgeClass: 'badge-file-type',
     stripClass: 'strip-file-type',
     label: (t) => t.fileType,
+  },
+  video_review: {
+    badgeClass: 'badge-video-review',
+    stripClass: 'strip-file-type',
+    label: (t) => t.videoReview,
   },
   file_download: {
     badgeClass: 'badge-file-type',
@@ -446,7 +453,7 @@ function buildCard(group, t) {
   const kind         = ticketKindFor(group);
   // File/video reviews must reference the BLOCKED resource; a site request
   // still describes the parent page the user is trying to use.
-  const ticketTarget = (!kind.type || kind.type === 'site') ? tabUrl : representativeUrl(group);
+  const ticketTarget = (!kind.type || kind.type === 'site') ? tabUrl : representativeUrl(group, kind.type);
   const ticketUrl    = makeTicketUrl(ticketTarget, tabUrl, kind.type || 'site');
   const ticketLabel  = t[kind.labelKey] || t.openTicket;
 
@@ -505,7 +512,7 @@ function buildCard(group, t) {
       <svg class="card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
 
-    ${blockType === 'file_type' ? `<div style="margin:0 11px 6px;padding:6px 9px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:10.5px;line-height:1.35;color:#1E3A8A;">${esc(t.fileTypeSub)}</div>` : ''}
+    ${kind.type === 'file' ? `<div style="margin:0 11px 6px;padding:6px 9px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:10.5px;line-height:1.35;color:#1E3A8A;">${esc(t.fileTypeSub)}</div>` : ''}
     ${kind.costsPoint ? `<div style="margin:0 12px 6px;padding:6px 9px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;font-size:11px;line-height:1.4;color:#92400E;">${esc(t.videoCostNote)}</div>` : ''}
     ${kind.type === null ? `<div style="margin:0 12px 6px;padding:6px 9px;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:6px;font-size:11px;line-height:1.4;color:#4B5563;">${esc(t.notRequestable)}</div>` : ''}
 
@@ -1014,9 +1021,11 @@ function buildTicketContent(withUrlList = false, focusGroup = null) {
   if ((focusKind === 'video' || focusKind === 'file') && focusGroup) {
     const isFile  = focusKind === 'file';
     const subject = isFile ? t.ticketFileSubject(host) : t.ticketVideoSubject(host);
-    // One line per LOGICAL file: a streaming video is hundreds of segments of
-    // the same media, and pasting 152 near-identical URLs helps nobody.
-    const urls    = uniqueFiles(focusGroup.requests).map(r => r.url);
+    // One line per LOGICAL file, restricted to the requestable kind (a merged
+    // host may also carry non-requestable trackers): a streaming video is
+    // hundreds of segments of the same media, and pasting near-identical URLs —
+    // or unrelated tracker URLs — helps nobody.
+    const urls    = filesForKind(focusGroup, focusKind).map(r => r.url);
     const linkLabel = urls.length > 1
       ? (isFile ? t.ticketFileLinksLabel : t.ticketVideoLinksLabel)
       : (isFile ? t.ticketFileLinkLabel  : t.ticketVideoLinkLabel);
@@ -1040,7 +1049,10 @@ function buildTicketContent(withUrlList = false, focusGroup = null) {
       .filter(g => g.requests.length > 0);
     const sections = groups.map(g => {
       const label = (BLOCK_META[g.blockType] ?? BLOCK_META.unknown).label(t);
-      const urls  = g.requests.map(r => `  • ${r.url}`).join('\n');
+      // Collapse streaming segments to one logical file per line (a video is
+      // hundreds of near-identical segment URLs); note how many when folded.
+      const files = uniqueFiles(g.requests);
+      const urls  = files.map(r => `  • ${r.url}`).join('\n');
       return `[${label}] ${g.domain}\n${urls}`;
     }).join('\n\n');
     body = `${t.ticketIntro(host)}\n${t.ticketIntroList}\n\n${sections}\n\n${t.ticketAsk}`;
@@ -1367,13 +1379,19 @@ function kindFromType(type) {
 // verified live: 152 blocked requests that were all one video under a single
 // .../manifest.ism. Collapse them to the logical file so the user files one
 // review instead of 152 (and so counts shown in the UI mean something).
+// KEEP IN SYNC with background.js mediaManifestKey (same SEGMENT_EXT_RE + folds).
+const SEGMENT_EXT_RE = /\.(?:ts|m4s|m4v|cmfv|cmfa|fmp4|aac|vtt)$/i;
 function logicalFileKey(url) {
   try {
     const u = new URL(url);
     const m = u.pathname.match(/^(.*\.(?:ism|m3u8|mpd))(?:\/|$)/i);
     if (m) return u.origin + m[1];
-    // Otherwise fold a trailing segment counter (…/chunk-12.ts → …/chunk-N.ts)
-    return u.origin + u.pathname.replace(/\d+(?=\.[a-z0-9]+$)/i, 'N');
+    // Fold a numbered streaming SEGMENT (…/chunk-12.ts → …/chunk-N.ts) ONLY for
+    // known segment extensions, so report1.pdf / image02.jpg stay distinct files.
+    if (SEGMENT_EXT_RE.test(u.pathname)) {
+      return u.origin + u.pathname.replace(/\d+(?=\.[a-z0-9]+$)/i, 'N');
+    }
+    return u.origin + u.pathname;   // exact path → one key per distinct file
   } catch { return url; }
 }
 
@@ -1450,8 +1468,21 @@ function pageTicketKind() {
   };
 }
 
-function representativeUrl(group) {
-  const files = uniqueFiles(group.requests);
+// The logical files to review for a group, restricted to the REQUESTABLE kind
+// so a mixed host (one blocked file among many non-requestable trackers on the
+// same host, merged into one card) targets the file — not the noisier tracker.
+// Falls back to all files when none carry that kind's code (e.g. code missing).
+function filesForKind(group, wantType) {
+  let reqs = group.requests;
+  if (wantType) {
+    const f = reqs.filter(r => requestTypeForCode(r.blockCode) === wantType);
+    if (f.length) reqs = f;
+  }
+  return uniqueFiles(reqs);
+}
+
+function representativeUrl(group, wantType) {
+  const files = filesForKind(group, wantType);
   return (files[0] && files[0].url) || tabUrl;
 }
 
@@ -1488,7 +1519,10 @@ function displayGroups(groups) {
     const reviewable = kind === 'file' || kind === 'video';
     // Badge follows the actionable kind when there is one, else the most
     // severe of the merged classifications.
-    group.blockType  = reviewable ? 'file_type' : mostSevereType(e.types);
+    // Distinct badge type per kind so a video review isn't labelled "File".
+    group.blockType  = kind === 'video' ? 'video_review'
+                     : kind === 'file'  ? 'file_type'
+                     : mostSevereType(e.types);
     group._reviewable = reviewable;
     return group;
   });

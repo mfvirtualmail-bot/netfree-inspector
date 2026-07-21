@@ -49,6 +49,7 @@ const NF_SAVE_URL    = 'https://netfree.link/api/user/save-traffic-record';
 const NF_VIEW_PREFIX = 'https://netfree.link/app/#/tools/traffic/view/';
 const DNR_RULE_ID    = 9101;
 const SSE_MAX_EVENTS = 300000;   // hard cap so a very long recording can't OOM
+const SSE_UPLOAD_TIMEOUT_MS = 15000;   // bound the best-effort traffic-recording PUT
 
 let sseEvents = [];
 let sseAbort  = null;
@@ -140,12 +141,20 @@ async function buildAndUploadSSE() {
     if (!rec.length)       { diag.error = 'no-rows';    return null; }
     const body = JSON.stringify(rec);
     diag.bytes = body.length;
-    const res = await fetch(NF_SAVE_URL, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: { 'content-type': 'text/plain' },
-      body,
-    });
+    // Bounded: a stalled save must never hang the recorder (it runs alongside
+    // the video upload, which must not be held hostage to this best-effort one).
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), SSE_UPLOAD_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(NF_SAVE_URL, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'content-type': 'text/plain' },
+        body,
+        signal: ctrl.signal,
+      });
+    } finally { clearTimeout(timer); }
     diag.status = res.status;
     const ct = (res.headers.get('content-type') || '').toLowerCase();
     // Not JSON → logged out (HTML login page); !ok → rejected (e.g. payload too big).
@@ -349,26 +358,33 @@ async function onRecorderStop() {
   chunks = [];
   if (!blob.size) { finishWithError('empty-recording', 'upload'); return; }
 
-  try {
-    // Build + upload the real-stream (SSE) recording first, so its view URL
-    // rides in the same RECORDER_DONE. null → not behind the filter / stream
-    // unavailable → the background reconstructs from chrome.webRequest instead.
-    const trafficUrl = await buildAndUploadSSE();
-    const filekey = await uploadRecording(blob);
-    reportOutcome({ type: 'RECORDER_DONE', filekey, bytes: blob.size, trafficUrl: trafficUrl || null });
-  } catch (e) {
-    finishWithError((e && e.message) || 'upload-failed', 'upload');
+  // Run the two INDEPENDENT uploads concurrently: the small best-effort SSE
+  // traffic recording (real-filter data) must never delay or, if it stalls,
+  // forfeit the video (the primary artifact). buildAndUploadSSE never rejects
+  // (returns null on any failure); uploadRecording throws on failure.
+  const [trafficRes, videoRes] = await Promise.allSettled([
+    buildAndUploadSSE(),
+    uploadRecording(blob),
+  ]);
+  const trafficUrl = (trafficRes.status === 'fulfilled' && trafficRes.value) || null;
+
+  recorder = null;
+  stream   = null;
+  removeOriginRule();
+
+  if (videoRes.status === 'rejected') {
+    // The video failed — but if the SSE recording was already saved to NetFree,
+    // pass its URL through so the ticket still carries the real recording
+    // instead of falling back to the inferior reconstruction.
+    finishWithError((videoRes.reason && videoRes.reason.message) || 'upload-failed', 'upload', trafficUrl);
     return;
-  } finally {
-    recorder = null;
-    stream   = null;
-    removeOriginRule();
   }
+  reportOutcome({ type: 'RECORDER_DONE', filekey: videoRes.value, bytes: blob.size, trafficUrl });
   // Background opens the ticket; this window's work is done.
   window.close();
 }
 
-function finishWithError(message, phase = 'record') {
+function finishWithError(message, phase = 'record', trafficUrl = null) {
   if (failed) return;
   failed = true;
   stopSSE();
@@ -376,7 +392,7 @@ function finishWithError(message, phase = 'record') {
   recorder = null;
   stream   = null;
   removeOriginRule();
-  reportOutcome({ type: 'RECORDER_ERROR', error: message, phase });
+  reportOutcome({ type: 'RECORDER_ERROR', error: message, phase, trafficUrl: trafficUrl || null });
   window.close();
 }
 

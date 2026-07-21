@@ -686,7 +686,7 @@ async function completeScreenRecording(filekey, streamTrafficUrl) {
 // Any later phase → a demo DID happen, and the user must still end up
 // with an open support request: attach the traffic recording if it can be
 // built, note the missing video, and open the form regardless.
-async function failScreenRecording(error, phase) {
+async function failScreenRecording(error, phase, streamTrafficUrl) {
   if (srFinalizing) return;
   srFinalizing = true;
   let recWinId = null;
@@ -696,12 +696,17 @@ async function failScreenRecording(error, phase) {
     recWinId = st.recorderWinId;
     let ticketOpened = false;
     if (phase !== 'start') {
-      let trafficUrl = null, trafficFailed = false;
-      try {
-        trafficUrl = await buildGlobalTrafficUrl();
-      } catch (e) {
-        trafficFailed = true;
-        console.warn('[NetFree Inspector] traffic-recording upload failed:', e?.message || e);
+      // Prefer the real-stream (SSE) recording the recorder already saved to
+      // NetFree, even though the VIDEO upload failed — only reconstruct from
+      // chrome.webRequest if the stream produced nothing.
+      let trafficUrl = streamTrafficUrl || null, trafficFailed = false;
+      if (!trafficUrl) {
+        try {
+          trafficUrl = await buildGlobalTrafficUrl();
+        } catch (e) {
+          trafficFailed = true;
+          console.warn('[NetFree Inspector] traffic-recording upload failed:', e?.message || e);
+        }
       }
       try {
         await finalizeScreenTicket(st, null, trafficUrl, trafficFailed);
@@ -733,7 +738,7 @@ async function handleRecorderMessage(msg) {
       return;
     }
     case 'RECORDER_DONE':  return completeScreenRecording(msg.filekey, msg.trafficUrl);
-    case 'RECORDER_ERROR': return failScreenRecording(msg.error, msg.phase);
+    case 'RECORDER_ERROR': return failScreenRecording(msg.error, msg.phase, msg.trafficUrl);
   }
 }
 
@@ -745,7 +750,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const v = changes.screenRecUpload.newValue;
   if (!v) return;
   if (v.type === 'RECORDER_DONE' && v.filekey) completeScreenRecording(v.filekey, v.trafficUrl);
-  else if (v.type === 'RECORDER_ERROR')        failScreenRecording(v.error, v.phase);
+  else if (v.type === 'RECORDER_ERROR')        failScreenRecording(v.error, v.phase, v.trafficUrl);
 });
 
 // Watchdog firing = a stage never reported back.
@@ -785,7 +790,7 @@ chrome.windows.onRemoved.addListener(async (winId) => {
     const up = (await chrome.storage.local.get('screenRecUpload')).screenRecUpload;
     if (up) {
       if (up.type === 'RECORDER_DONE' && up.filekey) { await completeScreenRecording(up.filekey, up.trafficUrl); return; }
-      if (up.type === 'RECORDER_ERROR')              { await failScreenRecording(up.error, up.phase); return; }
+      if (up.type === 'RECORDER_ERROR')              { await failScreenRecording(up.error, up.phase, up.trafficUrl); return; }
     }
 
     const st = await srGet();
@@ -986,21 +991,28 @@ const BLOCK_FETCH_TIMEOUT_MS = 6000;
 
 async function fetchBlockCode(url) {
   if (blockCodeCache.has(url)) return blockCodeCache.get(url);
-  let code = null;
+  let code = null, ok = false;
   try {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), BLOCK_FETCH_TIMEOUT_MS);
     // credentials omitted — we only need the block shell, not a session.
     const res   = await fetch(url, { credentials: 'omit', signal: ctrl.signal });
     clearTimeout(timer);
+    ok = true;                       // we reached the server and read a response
     const text  = await res.text();
     const m = text.match(/\/block\/#([^"'\s]+)/);
     if (m) {
       const json = JSON.parse(decodeURIComponent(m[1]));
       if (json && typeof json.block === 'string') code = json.block;
     }
-  } catch { /* network/abort/parse failure → null, fall back to heuristic */ }
-  blockCodeCache.set(url, code);
+  } catch { /* network/abort/parse failure — do NOT poison the cache; retry later */ }
+  // Only cache a genuine read (code, or a real "no code" from a reachable
+  // server). A transient failure must stay retryable, or a sub-resource whose
+  // first re-fetch aborted would show "Undefined" for the whole SW lifetime.
+  if (ok) {
+    if (blockCodeCache.size > 3000) blockCodeCache.clear();   // bounded, like tracked418/probeCache
+    blockCodeCache.set(url, code);
+  }
   return code;
 }
 
@@ -1116,15 +1128,23 @@ async function applyCodeToTab(tabId, url, code) {
 // onHeadersReceived), so it dedups by requestId.
 const tracked418 = new Set();
 
-// Streaming media (HLS/DASH) loads a video as hundreds of numbered segments,
-// all under one .../manifest.ism (or .m3u8/.mpd). They are ONE logical block —
-// so we key them by the manifest and store a single entry per video, no matter
-// how many segments play. Returns the manifest key, or null for a normal URL.
+// Streaming media loads a video as hundreds of numbered segments. They are ONE
+// logical block, in two shapes: segments PATH-CHILD of a manifest
+// (…/manifest.ism/QualityLevels…) and classic HLS/DASH SIBLINGS numbered next
+// to the manifest (…/chunk-12.ts). Fold both to one key. The sibling fold is
+// restricted to known segment extensions so genuinely-distinct numbered files
+// (report1.pdf, image02.jpg) are NOT merged. Returns null for a normal URL.
+// KEEP IN SYNC with popup.js logicalFileKey (same SEGMENT_EXT_RE + folds).
+const SEGMENT_EXT_RE = /\.(?:ts|m4s|m4v|cmfv|cmfa|fmp4|aac|vtt)$/i;
 function mediaManifestKey(url) {
   try {
     const u = new URL(url);
     const m = u.pathname.match(/^(.*\.(?:ism|m3u8|mpd))(?:\/|$)/i);
-    return m ? u.origin + m[1] : null;
+    if (m) return u.origin + m[1];
+    if (SEGMENT_EXT_RE.test(u.pathname)) {
+      return u.origin + u.pathname.replace(/\d+(?=\.[a-z0-9]+$)/i, 'N');
+    }
+    return null;
   } catch { return null; }
 }
 

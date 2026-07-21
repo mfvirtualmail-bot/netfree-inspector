@@ -396,6 +396,7 @@ body {
 .badge-not-whitelisted::before { background: var(--amber); }
 .badge-user-settings::before   { background: var(--violet); }
 .badge-file-type::before       { background: var(--cyan); }
+.badge-video-review::before    { background: var(--violet); }
 .badge-unknown::before         { background: var(--text-faint); }
 
 .block-domain {
