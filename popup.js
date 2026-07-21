@@ -55,13 +55,14 @@ const T = {
     newSiteTitle:     'האתר עדיין לא פתוח',
     newSiteSub:       'לחץ למטה לפתיחת בקשה — נט פרי תבדוק ותפתח אותו',
     ticketVideoSubject:    (host) => `בקשת בדיקת וידאו - ${host}`,
-    ticketVideoIntro:      'שלום,\nאני רוצה לצפות בסרטון הבא. אבקש לבדוק ולאשר אותו. תודה רבה.',
+    ticketVideoIntro:      'שלום,\nאני מנסה לצפות בסרטון באתר הזה, אך הוא אינו נפתח מכיוון שנט פרי חוסמת אותו. האתר עצמו כבר פתוח; רק הסרטון חסום. אבקש לבדוק ולאשר אותו כדי שאוכל לצפות בו. תודה רבה.',
     ticketVideoLinkLabel:  'קישור ישיר לסרטון',
     ticketVideoLinksLabel: 'קישורים ישירים',
     ticketFileSubject:     (host) => `בקשת בדיקת קובץ - ${host}`,
-    ticketFileIntro:       'שלום,\nהקובץ הבא נחסם בהודעה "סוג הקובץ אינו נתמך בסינון האוטומטי", והוא נחוץ כדי שהדף יעבוד. האתר עצמו כבר פתוח. אבקש לבדוק ולאשר את הקובץ. תודה רבה.',
+    ticketFileIntro:       'שלום,\nאני מנסה להשתמש באתר הזה, אך קובץ שהדף זקוק לו אינו נטען — נט פרי חוסמת אותו בהודעה "סוג הקובץ אינו נתמך בסינון האוטומטי". האתר עצמו כבר פתוח; רק הקובץ הזה חסום. אבקש לבדוק ולאשר אותו כדי שהדף יעבוד. תודה רבה.',
     ticketFileLinkLabel:   'קישור ישיר לקובץ',
     ticketFileLinksLabel:  'קישורים ישירים',
+    ticketFromLabel:       'הגעתי מהאתר',
     recordScreen:      'הקלט מסך',
     recordingScreen:   'מקליט מסך…',
     choosingSource:    'בחר מה להקליט…',
@@ -128,13 +129,14 @@ const T = {
     newSiteTitle:     'This website is still not open',
     newSiteSub:       'Click below to open a request — NetFree will review and open it',
     ticketVideoSubject:    (host) => `Video review request — ${host}`,
-    ticketVideoIntro:      'Hello,\nI would like to watch the following video. Please review and approve it. Thank you.',
-    ticketVideoLinkLabel:  'Direct link',
+    ticketVideoIntro:      `Hello,\nI'm trying to watch a video on this website, but it won't play because NetFree is blocking it. The website itself is already open; only the video is blocked. Please review and approve it so I can watch it. Thank you.`,
+    ticketVideoLinkLabel:  'Direct link to the video',
     ticketVideoLinksLabel: 'Direct links',
     ticketFileSubject:     (host) => `File review request — ${host}`,
-    ticketFileIntro:       'Hello,\nThe following file is blocked with "this type of file is not supported by automatic filtering", and it is needed for the page to work. The website itself is already open. Please review and approve the file. Thank you.',
+    ticketFileIntro:       `Hello,\nI'm trying to use this website, but a file the page needs won't load — NetFree blocks it with "this type of file is not supported by automatic filtering". The website itself is already open; only this file is blocked. Please review and approve it so the page works. Thank you.`,
     ticketFileLinkLabel:   'Direct link to the file',
     ticketFileLinksLabel:  'Direct links',
+    ticketFromLabel:       'Coming from',
     recordScreen:      'Record screen',
     recordingScreen:   'Recording screen…',
     choosingSource:    'Choose what to record…',
@@ -1033,7 +1035,12 @@ function buildTicketContent(withUrlList = false, focusGroup = null) {
       ? `${linkLabel}: ${urls[0]}`
       : `${linkLabel}:\n${urls.map(u => `  • ${u}`).join('\n')}`;
     const intro = isFile ? t.ticketFileIntro : t.ticketVideoIntro;
-    const body  = `${intro}\n\n${urlBlock}`;
+    // Name the page the user is actually on. The blocked resource is a bare
+    // CDN URL (jwpsrv.com/…​/manifest.ism) that gives the reviewer zero context
+    // about where it's needed — so state "Coming from: <page>" before the
+    // direct link. Skip if we somehow have no page URL.
+    const fromBlock = tabUrl ? `${t.ticketFromLabel}: ${tabUrl}\n` : '';
+    const body  = `${intro}\n\n${fromBlock}${urlBlock}`;
     return buildClipboard(subject, body);
   }
 

@@ -108,15 +108,20 @@ This is the most scrutinized tab. **Be thorough and honest** — bad answers her
 
 | Field | Value |
 |---|---|
-| **Single purpose description** | `Detects and lists URLs blocked by the NetFree content filter (HTTP 418 responses) on the current browser tab.` |
+| **Single purpose description** | `Detects and lists URLs blocked by the NetFree content filter (HTTP 418) on the current tab, and helps the user file a review request to NetFree for a blocked site, file, or video.` |
 | **Permission justifications:** | |
 | `webRequest` | `Required to observe HTTP responses and detect 418 status codes that indicate NetFree has blocked a URL.` |
-| `tabs` | `Required to associate blocked requests with the correct browser tab so each tab shows its own block list.` |
-| `storage` | `Required to temporarily store detected block data in chrome.storage.session so the popup can read it from the background service worker.` |
+| `tabs` | `Required to associate blocked requests with the correct browser tab, and to open NetFree's request form for the user.` |
+| `storage` | `Required to hold detected block data locally between the background service worker and the popup, and to remember the user's language.` |
 | `webNavigation` | `Required to detect when the user navigates to a new page so stale block data from the previous page can be cleared.` |
-| **Host permission (`<all_urls>`) justification** | `NetFree can block requests on any website, so the extension must be able to observe HTTP responses from all URLs. The extension only reads response status codes and URLs — it does not read or modify page content.` |
-| **Remote code** | **No** — the extension contains no remote code. |
-| **Data usage disclosure** | Check **none** of the "personally identifiable information", "health info", "financial info", "authentication info", "personal communications", "location", "web history", "user activity", "website content" boxes. The extension observes URLs locally but does not collect or transmit them. |
+| `alarms` | `Required to schedule periodic cleanup of stored block data and keep the background service worker responsive.` |
+| `desktopCapture` | `Required only when the user starts a screen recording, to capture the screen area the user selects so it can be attached to a NetFree review request.` |
+| `scripting` | `Required to inject a small helper on NetFree's request page that pre-fills the review-request form (blocked URL, page, description) for the user.` |
+| `system.display` | `Required to size and position the screen-recording helper window correctly across the user's monitors.` |
+| `declarativeNetRequestWithHostAccess` | `Required to set the correct Origin header on the single request to NetFree's own traffic stream so NetFree returns the user's live traffic data. Session-scoped, limited to netfree.link.` |
+| **Host permission (`<all_urls>`) justification** | `NetFree can block requests on any website, so the extension must be able to observe HTTP responses from all URLs. It reads response status codes and URLs; it does not read or modify page content for detection.` |
+| **Remote code** | **No** — the extension contains no remote code. (The NetFree logo is an image; the traffic stream is data, not executed code.) |
+| **Data usage disclosure** | The extension transmits data **only to NetFree (netfree.link), only when the user explicitly files a review request**, using the user's own NetFree session. Disclose accurately: it handles **"Website content"** (an optional screen recording the user starts) and **"User activity" / "Web history"** (the traffic recording — the user's recent requests as seen by NetFree). It does NOT handle authentication info, financial info, health info, location, or personal communications, and sends nothing to the developer or any third party. Detection data stays local. |
 | **Data use certifications** | Check all 3: (1) not selling data to third parties, (2) not using for purposes unrelated to single purpose, (3) not using for credit/lending. |
 | **Privacy policy URL** | Paste the public URL of `privacy-policy.md` (GitHub raw link or GitHub Pages URL) |
 
