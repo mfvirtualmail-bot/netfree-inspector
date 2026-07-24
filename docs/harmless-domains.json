@@ -1,8 +1,8 @@
 {
   "_comment": "NetFree Inspector — remote harmless-domain list. The extension fetches this JSON once per day and merges with its bundled fallback. Updating this file (via git push to main) propagates to all installed extensions within 24 hours — no Chrome Web Store release needed.",
   "_url_patterns_comment": "url_patterns matches by 'host-suffix/path-prefix' — use when the whole hostname can't be blanket-marked but a specific endpoint on it is noise. Supported by extension v1.4.8+.",
-  "version": 2,
-  "updated": "2026-05-14",
+  "version": 3,
+  "updated": "2026-07-24",
   "url_patterns": [
     "google.com/complete/s",
     "google.com/gen_204",
@@ -25,7 +25,7 @@
     "adsystem.google.com",
     "pagead2.googlesyndication.com",
 
-    "mail-ads.google.com"
+    "mail-ads.google.com",
     "facebook.net",
     "connect.facebook.net",
 
