@@ -2,6 +2,15 @@
 
 גלה חסימות נט פרי בכל דף באחת · Instantly detect NetFree content filter blocks on any page.
 
+<p>
+  <a href="https://mfvirtualmail-bot.github.io/netfree-inspector/"><img alt="Website" src="https://img.shields.io/badge/🌐_Website-netfree--inspector-1a6dff?style=for-the-badge" /></a>
+  &nbsp;
+  <a href="https://chromewebstore.google.com/detail/netfree-inspector/enapmclemkjcnffgekeknfjcgommamfj"><img alt="Chrome Web Store" src="https://img.shields.io/badge/Chrome_Web_Store-Install-16a34a?style=for-the-badge&logo=googlechrome&logoColor=white" /></a>
+</p>
+
+**🌐 Website:** https://mfvirtualmail-bot.github.io/netfree-inspector/
+**🧩 Install from the Chrome Web Store:** https://chromewebstore.google.com/detail/netfree-inspector/enapmclemkjcnffgekeknfjcgommamfj
+
 ---
 
 ## What it does
