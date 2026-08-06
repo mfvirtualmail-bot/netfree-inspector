@@ -11,6 +11,19 @@
     "google.com/async/",
     "google.com/sgasync",
     "google.com/url?",
+
+    "google.co.il/complete/s",
+    "google.co.il/log",
+    "google.co.il/client_204",
+    "google.co.il/async/",
+    "google.co.il/sgasync",
+    "google.co.il/url?",
+
+
+
+
+
+    
     "youtube.com/api/stats",
     "youtube.com/ptracking"
   ],
