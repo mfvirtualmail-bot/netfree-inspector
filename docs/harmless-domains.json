@@ -11,7 +11,7 @@
     "google.com/async/",
     "google.com/sgasync",
     "google.com/url?",
-
+    "csp.withgoogle.com",
     "google.co.il/complete/s",
     "google.co.il/log",
     "google.co.il/client_204",
