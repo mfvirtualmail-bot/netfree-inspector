@@ -5,14 +5,18 @@
   "updated": "2026-07-24",
   "url_patterns": [
     "google.com/complete/s",
+    "google.co.il/complete/s",
     "google.com/gen_204",
     "google.com/log",
     "google.com/client_204",
     "google.com/async/",
     "google.com/sgasync",
     "google.com/url?",
-    "youtube.com/api/stats",
-    "youtube.com/ptracking"
+    "google.co.il/log",
+    "google.co.il/client_204",
+    "google.co.il/async/",
+    "google.co.il/sgasync",
+    "google.co.il/url?",
   ],
   "domains": [
     "doubleclick.net",
