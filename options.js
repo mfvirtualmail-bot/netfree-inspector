@@ -1,8 +1,8 @@
 // NetFree Inspector — Options page
 
-const USER_CUSTOM_KEY  = 'harmlessUserList';
 const REMOTE_CACHE_KEY = 'harmlessRemoteCache';
 const LANG_KEY         = 'lang';
+const CONTACT_EMAIL    = 'mf.virtualmail@gmail.com';
 
 let lang = 'he';
 
@@ -20,6 +20,13 @@ const STR = {
   reviewSubject: { he: (host) => `בקשה לאתר - ${host}`,        en: (host) => `Website request — ${host}` },
   reviewBody:    { he: (url) => `שלום,\nהאתר הבא חשוב לי ואינו נפתח. אבקש לבדוק ולאשר אותו:\n${url}\n\nתודה רבה.`,
                    en: (url) => `Hello,\nThe following website is important to me and won't open. Please review and approve it:\n${url}\n\nThank you.` },
+  // Feedback e-mail subjects/bodies (version filled in at wiring time)
+  suggestSubject: { he: 'NetFree Inspector — רעיון / הצעה', en: 'NetFree Inspector — Idea / suggestion' },
+  contactSubject: { he: 'NetFree Inspector — דיווח על תקלה', en: 'NetFree Inspector — Issue report' },
+  suggestBody: { he: (v) => `\n\n—\nNetFree Inspector v${v}\nהרעיון שלי:\n`,
+                 en: (v) => `\n\n—\nNetFree Inspector v${v}\nMy idea:\n` },
+  contactBody: { he: (v) => `\n\n—\nNetFree Inspector v${v}\nהתקלה (ובאיזה אתר היא קורית):\n`,
+                 en: (v) => `\n\n—\nNetFree Inspector v${v}\nThe problem (and which website it happens on):\n` },
 };
 function T(k) { return STR[k]?.[lang] ?? k; }
 
@@ -34,52 +41,38 @@ function relTime(ts) {
   return lang === 'he' ? `לפני ${d} ימים` : `${d} d ago`;
 }
 
+function extVersion() {
+  try { return chrome.runtime.getManifest().version; } catch { return ''; }
+}
+
 // ── i18n ─────────────────────────────────────────────
 function applyLang(newLang) {
   lang = newLang;
   const html = document.documentElement;
   html.lang  = lang;
   html.dir   = lang === 'he' ? 'rtl' : 'ltr';
-  document.getElementById('langBtn').textContent = lang === 'he' ? 'EN' : 'עב';
   document.querySelectorAll('[data-he][data-en]').forEach(el => {
-    // Only swap leaf text nodes (skip containers that hold child elements,
-    // e.g. the refresh button which wraps a spinner + label).
     if (el.children.length === 0 || el.tagName === 'A') {
       el.textContent = el.dataset[lang];
     }
   });
+  // Language segmented control — highlight the active language.
+  document.querySelectorAll('#langSeg button').forEach(b =>
+    b.classList.toggle('active', b.dataset.lang === lang));
+  wireFeedback();          // rebuild mailto links in the chosen language
   chrome.storage.local.set({ [LANG_KEY]: lang });
 }
 
-// ── Load / save user list ───────────────────────────
-async function loadUserList() {
-  const r = await chrome.storage.local.get(USER_CUSTOM_KEY);
-  const list = r[USER_CUSTOM_KEY] ?? [];
-  document.getElementById('userList').value = list.join('\n');
+// ── Feedback / contact ──────────────────────────────
+function mailto(subject, body) {
+  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
-
-async function saveUserList() {
-  const raw = document.getElementById('userList').value;
-  const list = raw
-    .split(/[\n,]/)
-    .map(s => s.trim().toLowerCase())
-    .filter(s => s && !s.startsWith('#') && /^[a-z0-9.-]+$/.test(s));
-  const unique = Array.from(new Set(list));
-  await chrome.storage.local.set({ [USER_CUSTOM_KEY]: unique });
-  document.getElementById('userList').value = unique.join('\n');
-  flashStatus();
-}
-
-async function resetUserList() {
-  await chrome.storage.local.remove(USER_CUSTOM_KEY);
-  document.getElementById('userList').value = '';
-  flashStatus();
-}
-
-function flashStatus() {
-  const el = document.getElementById('status');
-  el.classList.add('visible');
-  setTimeout(() => el.classList.remove('visible'), 1500);
+function wireFeedback() {
+  const v = extVersion();
+  const suggest = document.getElementById('suggestBtn');
+  const contact = document.getElementById('contactBtn');
+  if (suggest) suggest.href = mailto(T('suggestSubject'), STR.suggestBody[lang](v));
+  if (contact) contact.href = mailto(T('contactSubject'), STR.contactBody[lang](v));
 }
 
 // ── Remote list info ────────────────────────────────
@@ -106,8 +99,6 @@ function setPill(kind, text) {
 }
 
 function errText(code) {
-  // bad-json/bad-shape = the file was reached but malformed; anything else
-  // (network / http-4xx / unavailable) is almost always a NetFree block.
   if (code === 'bad-json' || code === 'bad-shape') return T('errFailed');
   return T('errBlocked');
 }
@@ -140,9 +131,6 @@ async function forceRefreshRemote() {
 }
 
 // ── Request a review for a pasted address ────────────
-// Mirrors the popup's "new website" flow: stash subject+body so the
-// netfree-fill.js content script pre-fills NetFree's form, then open
-// the ticket page (t=site) with the pasted URL.
 function normalizeUrl(raw) {
   let s = (raw || '').trim();
   if (!s) return null;
@@ -185,20 +173,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stored = await chrome.storage.local.get(LANG_KEY);
   applyLang(stored[LANG_KEY] ?? 'he');
 
-  try {
-    document.getElementById('extVersion').textContent =
-      chrome.runtime.getManifest().version;
-  } catch {}
+  document.getElementById('extVersion').textContent = extVersion();
 
-  await loadUserList();
   await refreshRemoteInfo();
 
-  document.getElementById('langBtn').addEventListener('click', () => {
-    applyLang(lang === 'he' ? 'en' : 'he');
-    refreshRemoteInfo(); // re-render relative time in the new language
-  });
-  document.getElementById('saveBtn').addEventListener('click', saveUserList);
-  document.getElementById('resetBtn').addEventListener('click', resetUserList);
+  document.querySelectorAll('#langSeg button').forEach(b =>
+    b.addEventListener('click', () => applyLang(b.dataset.lang)));
   document.getElementById('refreshBtn').addEventListener('click', forceRefreshRemote);
   document.getElementById('reviewBtn').addEventListener('click', openReviewRequest);
   document.getElementById('reviewUrl').addEventListener('keydown', (e) => {

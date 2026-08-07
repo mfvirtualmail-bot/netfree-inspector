@@ -58,12 +58,6 @@
   .titles { flex: 1; min-width: 0; }
   h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
   .sub { color: var(--muted); font-size: 12.5px; margin: 1px 0 0; }
-  .lang-btn {
-    background: var(--card); border: 1px solid var(--border); border-radius: 999px;
-    padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
-    color: var(--muted); flex: none;
-  }
-  .lang-btn:hover { color: var(--text); border-color: var(--brand); }
 
   section {
     background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
@@ -72,14 +66,13 @@
   h2 { font-size: 15px; margin: 0 0 5px; letter-spacing: -.01em; }
   p.hint { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
 
-  textarea {
-    width: 100%; min-height: 132px; padding: 12px 14px;
+  input[type="url"] {
+    width: 100%; padding: 11px 14px;
     border: 1px solid var(--border); border-radius: 10px; background: var(--field);
     color: var(--text);
     font-family: "SF Mono", "Fira Code", ui-monospace, monospace; font-size: 13px;
-    resize: vertical;
   }
-  textarea:focus, input:focus { outline: 2px solid var(--brand); outline-offset: -1px; background: var(--card); }
+  input:focus { outline: 2px solid var(--brand); outline-offset: -1px; background: var(--card); }
 
   .row { display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
   button.action {
@@ -105,17 +98,28 @@
   button.ghost.loading .spinner { display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .status {
-    color: var(--ok); font-size: 13px; font-weight: 600;
-    opacity: 0; transition: opacity .2s;
-  }
-  .status.visible { opacity: 1; }
+  /* Language segmented control */
+  .lang-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; direction: ltr; }
+  .lang-seg button { border: none; background: var(--field); color: var(--muted); font-size: 14px; font-weight: 600; padding: 9px 24px; cursor: pointer; }
+  .lang-seg button:hover { color: var(--text); }
+  .lang-seg button.active { background: var(--brand); color: #fff; }
 
-  /* Refresh result pill */
-  .pill {
-    font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px;
-    display: none;
+  /* Feedback buttons */
+  .feedback-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .feedback-btn {
+    flex: 1; min-width: 150px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; padding: 12px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--field); color: var(--text); cursor: pointer;
   }
+  .feedback-btn:hover { border-color: var(--brand); color: var(--brand); }
+  .feedback-btn.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .feedback-btn.primary:hover { background: var(--brand-hov); color: #fff; }
+  .email-line { text-align: center; margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+  .email-line a { color: var(--brand); text-decoration: none; }
+  .email-line a:hover { text-decoration: underline; }
+
+  /* Pill (refresh / review status) */
+  .pill { font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; display: none; }
   .pill.show { display: inline-block; }
   .pill.ok  { color: var(--ok);  background: var(--ok-bg); }
   .pill.err { color: var(--err); background: var(--err-bg); }
@@ -138,25 +142,18 @@
     <header>
       <div class="logo" aria-hidden="true">🛡️</div>
       <div class="titles">
-        <h1 data-he="NetFree Inspector" data-en="NetFree Inspector">NetFree Inspector</h1>
+        <h1>NetFree Inspector</h1>
         <p class="sub" data-he="הגדרות" data-en="Settings">הגדרות</p>
       </div>
-      <button class="lang-btn" id="langBtn" type="button">EN</button>
     </header>
 
-    <!-- ── Custom exclusions ── -->
+    <!-- ── Language ── -->
     <section>
-      <h2 data-he="רשימת החסמות שאני רוצה להסתיר" data-en="My custom harmless list">רשימת החסמות שאני רוצה להסתיר</h2>
-      <p class="hint"
-         data-he="הזן דומיין אחד לשורה. חסימות של דומיינים אלה יסווגו כ'לא משמעותיות' ויוסתרו כברירת מחדל. התאמה היא סיומת — 'example.com' יתפוס גם 'sub.example.com'."
-         data-en="One domain per line. Blocks on these domains are treated as 'not meaningful' and hidden by default. Matching is suffix-based — 'example.com' also matches 'sub.example.com'.">
-        הזן דומיין אחד לשורה.
-      </p>
-      <textarea id="userList" placeholder="ads.example.com&#10;tracker.example.net"></textarea>
-      <div class="row">
-        <button class="action" id="saveBtn" type="button" data-he="שמור" data-en="Save">שמור</button>
-        <button class="ghost"  id="resetBtn" type="button" data-he="איפוס" data-en="Reset">איפוס</button>
-        <span class="status" id="status" data-he="✓ נשמר" data-en="✓ Saved">✓ נשמר</span>
+      <h2 data-he="שפה" data-en="Language">שפה</h2>
+      <p class="hint" data-he="בחר את שפת התוסף." data-en="Choose the extension language.">בחר את שפת התוסף.</p>
+      <div class="lang-seg" id="langSeg">
+        <button type="button" data-lang="he">עברית</button>
+        <button type="button" data-lang="en">English</button>
       </div>
     </section>
 
@@ -168,9 +165,7 @@
          data-en="A site you need that's probably blocked? Paste the address — a ready-made NetFree review request opens, no need to visit the blocked page first.">
         הדבק כתובת ותיפתח בקשת בדיקה מוכנה לנט פרי.
       </p>
-      <input type="url" id="reviewUrl" dir="ltr"
-             placeholder="https://example.com"
-             style="width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:var(--field);color:var(--text);font-family:'SF Mono','Fira Code',ui-monospace,monospace;font-size:13px;" />
+      <input type="url" id="reviewUrl" dir="ltr" placeholder="https://example.com" />
       <div class="row">
         <button class="action" id="reviewBtn" type="button"
                 data-he="פתח בקשת בדיקה" data-en="Open review request">פתח בקשת בדיקה</button>
@@ -178,7 +173,7 @@
       </div>
     </section>
 
-    <!-- ── Remote list info ── -->
+    <!-- ── Shared list info ── -->
     <section>
       <h2 data-he="רשימת פרסומות/מעקב משותפת" data-en="Shared ad &amp; tracker list">רשימת פרסומות/מעקב משותפת</h2>
       <p class="hint"
@@ -210,6 +205,24 @@
         </button>
         <span class="pill" id="refreshStatus" role="status" aria-live="polite"></span>
       </div>
+    </section>
+
+    <!-- ── Feedback & contact ── -->
+    <section>
+      <h2 data-he="משוב ויצירת קשר" data-en="Feedback &amp; contact">משוב ויצירת קשר</h2>
+      <p class="hint"
+         data-he="עזרו לשפר את NetFree Inspector — דווחו על תקלה או הציעו רעיון."
+         data-en="Help make NetFree Inspector better — report a problem or suggest an idea.">
+        עזרו לשפר את NetFree Inspector.
+      </p>
+      <div class="feedback-row">
+        <a class="feedback-btn primary" id="suggestBtn" href="#" data-he="💡 הצע רעיון" data-en="💡 Suggest an idea">💡 הצע רעיון</a>
+        <a class="feedback-btn" id="contactBtn" href="#" data-he="✉️ דווח על תקלה" data-en="✉️ Report an issue">✉️ דווח על תקלה</a>
+      </div>
+      <p class="email-line">
+        <span data-he="או במייל:" data-en="Or email:">או במייל:</span>
+        <a id="contactEmailLink" href="mailto:mf.virtualmail@gmail.com">mf.virtualmail@gmail.com</a>
+      </p>
     </section>
 
     <!-- ── About ── -->
