@@ -11,7 +11,6 @@
     "google.com/async/",
     "google.com/sgasync",
     "google.com/url?",
-    "csp.withgoogle.com",
     "google.co.il/complete/s",
     "google.co.il/log",
     "google.co.il/client_204",
@@ -24,6 +23,7 @@
   ],
   "domains": [
     "doubleclick.net",
+   "csp.withgoogle.com",
     "googlesyndication.com",
     "googletagmanager.com",
     "googletagservices.com",
@@ -32,7 +32,6 @@
     "adservice.google.com",
     "adsystem.google.com",
     "pagead2.googlesyndication.com",
-
     "studio.workspace.google.com",
     "mail-ads.google.com",
     "facebook.net",
