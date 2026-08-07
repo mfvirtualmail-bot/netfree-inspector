@@ -87,7 +87,7 @@ function hydrateRecordings() {
           const tabId = Number(k.slice(4));
           recTabs.add(tabId);
           const reqs = new Map((v.reqs || []).map(r => [r.id, r]));
-          recSessions.set(tabId, { startTime: v.startTime || 0, host: v.host || '', reqs });
+          recSessions.set(tabId, { startTime: v.startTime || 0, host: v.host || '', reqs, passive: !!v.passive });
         }
       } catch {
         hydratePromise = null; // retry on next call
@@ -116,6 +116,7 @@ async function persistRecording(tabId) {
     await chrome.storage.session.set({
       [REC_KEY(tabId)]: {
         active: true,
+        passive: !!s.passive,
         startTime: s.startTime,
         host: s.host || '',
         reqs: [...s.reqs.values()],
@@ -301,9 +302,9 @@ chrome.webRequest.onHeadersReceived.addListener(
   ['responseHeaders'],
 );
 
-async function startRecording(tabId, host) {
+async function startRecording(tabId, host, passive = false) {
   recTabs.add(tabId);
-  recSessions.set(tabId, { startTime: Date.now(), host: host || '', reqs: new Map() });
+  recSessions.set(tabId, { startTime: Date.now(), host: host || '', reqs: new Map(), passive });
   await persistRecording(tabId);
 }
 
@@ -902,14 +903,51 @@ function safeTabCall(p) {
 // Badge
 // ─────────────────────────────────────────────────────────
 
+// Block types NetFree permanently blocks and won't let you request — ads /
+// bad content (blacklisted) and the user's own personal-settings blocks.
+// Folded away in the popup and excluded from the badge: they're ~never the
+// cause of a broken page. Keep in sync with popup.js MUTED_BLOCK_TYPES.
+const MUTED_BLOCK_TYPES = new Set(['blacklisted', 'user_settings']);
+
+// Re-evaluate "harmless" LIVE against the current harmless lists instead of
+// trusting the flag snapshotted when the block was first recorded. This makes
+// (a) freshly-added custom domains and (b) list updates apply to blocks already
+// on the page, and (c) known-noise endpoints that NetFree happens to code oddly
+// (e.g. google.com/complete/s comes back as risk-type / "file") still fold away.
+function liveHarmless(url) {
+  try {
+    if (self.isHarmlessUrl)  return !!self.isHarmlessUrl(url);
+    if (self.isHarmlessHost) return !!self.isHarmlessHost(new URL(url).hostname);
+  } catch { /* fall through */ }
+  return false;
+}
+
+// A copy of a tab's block data with every request's harmless flag recomputed
+// live — used when serving blocks to the popup so the fold reflects the
+// current lists, not the moment of capture.
+function withLiveHarmless(data) {
+  if (!data || !Array.isArray(data.blocks)) return data;
+  return {
+    ...data,
+    blocks: data.blocks.map(g => ({
+      ...g,
+      requests: g.requests.map(r => ({ ...r, harmless: liveHarmless(r.url) })),
+    })),
+  };
+}
+
 async function refreshBadge(tabId) {
   const data  = await getTabData(tabId);
 
-  // Only count NON-harmless requests for the badge & icon colour.
-  // Harmless blocks (ads, trackers) are still recorded and visible in the
-  // popup when the user toggles "show harmless", but they don't alarm.
+  // The badge / icon count only ACTIONABLE blocks — not-yet-reviewed sites,
+  // files and videos the user can actually request. Muted blocks (harmless
+  // ads/trackers + blacklisted bad content + personal-settings) are still
+  // recorded and viewable via the popup toggle, but never alarm: a page of
+  // only muted blocks shows no number and a green icon.
   const meaningful = data.blocks.reduce(
-    (s, g) => s + g.requests.filter(r => !r.harmless).length,
+    (s, g) => s + (MUTED_BLOCK_TYPES.has(g.blockType)
+      ? 0
+      : g.requests.filter(r => !liveHarmless(r.url)).length),
     0,
   );
 
@@ -1300,12 +1338,18 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   // silently capture the tab's browsing history across sites, and a later
   // ticket would upload unrelated traffic to NetFree.
   await hydrateRecordings();
-  const s = recSessions.get(details.tabId);
-  if (s) {
-    const newHost = extractDomain(details.url);
-    if (s.host && newHost && newHost !== s.host) {
-      await stopRecording(details.tabId);
-    }
+  const s       = recSessions.get(details.tabId);
+  const newHost = extractDomain(details.url);
+  // Keep an EXPLICIT "Reload & Record" session running across a same-host
+  // reload; in every other case start a fresh PASSIVE capture for the new page.
+  // Passive capture means "Open NetFree Request" already holds the full traffic
+  // (accepted + blocked) without the user clicking Reload & Record first. It is
+  // per-page (a fresh session each navigation), so a ticket never carries
+  // unrelated cross-site history, and it's purely event-driven — onBeforeRequest
+  // wakes the worker, so it adds NO extra keep-alive beyond what already runs.
+  const keepExplicit = s && !s.passive && s.host && newHost && newHost === s.host;
+  if (!keepExplicit) {
+    await startRecording(details.tabId, newHost, /* passive */ true);
   }
 });
 
@@ -1340,7 +1384,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   switch (msg.type) {
 
     case 'GET_BLOCKS':
-      getTabData(msg.tabId).then(reply);
+      getTabData(msg.tabId).then(data => reply(withLiveHarmless(data)));
       return true; // async
 
     case 'CLEAR_BLOCKS':
@@ -1359,9 +1403,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
     case 'REFRESH_HARMLESS_LIST':
       if (typeof self.refreshHarmlessList === 'function') {
-        self.refreshHarmlessList().then(() => reply({ ok: true }));
+        self.refreshHarmlessList(msg.force === true)
+          .then(result => reply(result || { ok: true, updated: false }));
       } else {
-        reply({ ok: false });
+        reply({ ok: false, error: 'unavailable' });
       }
       return true;
 

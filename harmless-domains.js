@@ -153,30 +153,48 @@ async function loadCachedAndUser() {
   }
 }
 
-async function refreshRemoteIfStale() {
+// Fetch the remote list. Returns a status object so the options page can show
+// the user what happened (success / up-to-date / why it failed) instead of the
+// old silent behaviour. Pass force=true to bypass the 24h staleness check.
+async function refreshRemoteIfStale(force = false) {
+  let cached = null;
   try {
-    const r       = await chrome.storage.local.get(REMOTE_CACHE_KEY);
-    const cached  = r[REMOTE_CACHE_KEY];
+    const r  = await chrome.storage.local.get(REMOTE_CACHE_KEY);
+    cached   = r[REMOTE_CACHE_KEY] ?? null;
     const fetched = cached?.fetchedAt ?? 0;
-    if (Date.now() - fetched < REFRESH_EVERY_MS) return; // still fresh
+    if (!force && Date.now() - fetched < REFRESH_EVERY_MS) {
+      return { ok: true, updated: false, cache: cached }; // still fresh
+    }
 
-    const res = await fetch(REMOTE_URL, { cache: 'no-cache' });
-    if (!res.ok) return;
-    const json = await res.json();
-    if (!Array.isArray(json.domains)) return;
+    let res;
+    try {
+      res = await fetch(REMOTE_URL, { cache: 'no-cache' });
+    } catch {
+      return { ok: false, updated: false, error: 'network', cache: cached };
+    }
+    if (!res.ok) {
+      return { ok: false, updated: false, error: 'http-' + res.status, cache: cached };
+    }
 
-    await chrome.storage.local.set({
-      [REMOTE_CACHE_KEY]: {
-        domains:      json.domains,
-        url_patterns: Array.isArray(json.url_patterns) ? json.url_patterns : [],
-        version:      json.version ?? null,
-        updated:      json.updated ?? null,
-        fetchedAt:    Date.now(),
-      },
-    });
+    let json;
+    try { json = await res.json(); }
+    catch { return { ok: false, updated: false, error: 'bad-json', cache: cached }; }
+    if (!Array.isArray(json.domains)) {
+      return { ok: false, updated: false, error: 'bad-shape', cache: cached };
+    }
+
+    const newCache = {
+      domains:      json.domains,
+      url_patterns: Array.isArray(json.url_patterns) ? json.url_patterns : [],
+      version:      json.version ?? null,
+      updated:      json.updated ?? null,
+      fetchedAt:    Date.now(),
+    };
+    await chrome.storage.local.set({ [REMOTE_CACHE_KEY]: newCache });
     await loadCachedAndUser();
+    return { ok: true, updated: true, cache: newCache };
   } catch {
-    // offline / blocked / malformed — we just keep the previous cache
+    return { ok: false, updated: false, error: 'unknown', cache: cached };
   }
 }
 

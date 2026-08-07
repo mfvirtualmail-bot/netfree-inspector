@@ -10,13 +10,16 @@ const T = {
     noBlocks:         'לא נמצאו חסימות',
     noBlocksSub:      'כל הבקשות בדף זה עברו בהצלחה דרך נט פרי.',
     noBlocksHint:     'אם הדף לא עובד כראוי, נסה לרענן.',
-    noMeaningful:     'לא נמצאו חסימות משמעותיות',
-    noMeaningfulSub:  'נמצאו רק חסימות פרסומות/מעקב שלא משפיעות על הדף.',
+    noMeaningful:     'שום דבר לא דורש בדיקה',
+    noMeaningfulSub:  'נחסמו רק פרסומות / תוכן שנט פרי חוסמת בכוונה — אינם משפיעים על הדף.',
+    mutedCountLine:   (n) => `${n} חסימות לא חשובות — פרסומות / מעקב / תוכן חסום, אין מה לבקש`,
+    openOtherRequest: 'פתח בקשה לנט פרי ↗',
     blocksFound:      (n) => `נמצאו ${n} חסימ${n === 1 ? 'ה' : 'ות'} בדף זה`,
     blocksSubFound:   'לחץ על "פתח בקשה" לפנייה ישירה לנט פרי',
     blacklisted:      '🚫 חסום',
     notWhitelisted:   '⏳ לא נבדק עדיין',
     userSettings:     '⚙️ הגדרות אישיות',
+    harmlessLabel:    '📊 פרסומת / מעקב · לא בעיה',
     fileType:         '📄 קובץ — בדיקה',
     videoReview:      '🎬 וידאו — בדיקה',
     fileTypeSub:      'הסינון האוטומטי של נט פרי לא הצליח לסווג את הקובץ. הקלטת התעבורה שמצורפת לבקשה מאפשרת לנציג נט פרי לבדוק אותו ידנית.',
@@ -43,9 +46,9 @@ const T = {
     requests:         (n) => `${n} ${n === 1 ? 'בקשה' : 'בקשות'}`,
     moreRequests:     (n) => `+ ${n} בקשות נוספות`,
     loading:          'טוען…',
-    harmlessHidden:   (n) => `+ ${n} חסימות פרסומות/מעקב מוסתרות`,
-    showHarmless:     'הצג חסימות פרסומות/מעקב',
-    hideHarmless:     'הסתר חסימות פרסומות/מעקב',
+    harmlessHidden:   (n) => `+ ${n} חסומים כפרסומות / תוכן חסום`,
+    showHarmless:     'הצג חסימות פרסומות / תוכן חסום',
+    hideHarmless:     'הסתר חסימות פרסומות / תוכן חסום',
     ticketSubject:    (host) => `בעיה באתר ${host}`,
     ticketIntro:      (host) => `שלום,\nאני מנסה להשתמש באתר ${host} ומשהו בדף אינו נטען כראוי.`,
     ticketIntroList:  'בבדיקה ב-console של הדפדפן נמצא שהבקשות הבאות נחסמות על ידי נט פרי:',
@@ -84,13 +87,16 @@ const T = {
     noBlocks:         'No blocks detected',
     noBlocksSub:      'All requests on this page passed through NetFree successfully.',
     noBlocksHint:     'If the page isn\'t working correctly, try reloading below.',
-    noMeaningful:     'No meaningful blocks detected',
-    noMeaningfulSub:  'Only ad/tracker blocks were found — these don\'t affect the page.',
+    noMeaningful:     'Nothing needs review',
+    noMeaningfulSub:  'Only ads / bad-content were blocked — NetFree blocks these on purpose; they don\'t break the page.',
+    mutedCountLine:   (n) => `${n} not-important block${n !== 1 ? 's' : ''} — ads / trackers / bad content, nothing to request`,
+    openOtherRequest: 'Open a NetFree request ↗',
     blocksFound:      (n) => `${n} block${n !== 1 ? 's' : ''} found on this page`,
     blocksSubFound:   'Click "Open Request" to report directly to NetFree',
     blacklisted:      '🚫 Blocked',
     notWhitelisted:   '⏳ Not reviewed',
     userSettings:     '⚙️ Your settings',
+    harmlessLabel:    '📊 Ad / tracker · not a problem',
     fileType:         '📄 File — review',
     videoReview:      '🎬 Video — review',
     fileTypeSub:      'NetFree\'s automatic filter couldn\'t classify this file. The traffic recording attached to your request lets a NetFree agent review it manually.',
@@ -117,9 +123,9 @@ const T = {
     requests:         (n) => `${n} request${n !== 1 ? 's' : ''}`,
     moreRequests:     (n) => `+ ${n} more request${n !== 1 ? 's' : ''}`,
     loading:          'Loading…',
-    harmlessHidden:   (n) => `+ ${n} ad/tracker block${n !== 1 ? 's' : ''} hidden`,
-    showHarmless:     'Show ad / tracker blocks',
-    hideHarmless:     'Hide ad / tracker blocks',
+    harmlessHidden:   (n) => `+ ${n} blocked as ads / bad content`,
+    showHarmless:     'Show ads / bad-content blocks',
+    hideHarmless:     'Hide ads / bad-content blocks',
     ticketSubject:    (host) => `Problem with website ${host}`,
     ticketIntro:      (host) => `Hello,\nI'm trying to use the website ${host} and something on the page isn't loading correctly.`,
     ticketIntroList:  'When checking the browser console I found that the following requests are being blocked by NetFree:',
@@ -171,6 +177,11 @@ const BLOCK_META = {
     stripClass: 'strip-user-settings',
     label: (t) => t.userSettings,
   },
+  harmless: {
+    badgeClass: 'badge-unknown',
+    stripClass: 'strip-unknown',
+    label: (t) => t.harmlessLabel,
+  },
   file_type: {
     badgeClass: 'badge-file-type',
     stripClass: 'strip-file-type',
@@ -201,6 +212,17 @@ let tabId          = null;
 let tabUrl         = '';
 let blocks         = [];
 let showHarmless   = false;   // persisted in chrome.storage.local
+
+// "Muted" blocks are folded away by default (behind the toggle) and never
+// counted as a real problem: ads/trackers (harmless) PLUS blocks NetFree
+// permanently blocks and won't let you request — blacklisted bad content and
+// the user's own personal-settings blocks. Actionable blocks (not-reviewed
+// sites, files, videos, unknown 3rd-party) always show. Kept in sync with
+// background.js MUTED_BLOCK_TYPES + refreshBadge.
+const MUTED_BLOCK_TYPES = new Set(['blacklisted', 'user_settings']);
+function isMutedReq(r, blockType) {
+  return !!r.harmless || MUTED_BLOCK_TYPES.has(blockType);
+}
 
 // ─────────────────────────────────────────────
 // Init
@@ -326,22 +348,22 @@ function render() {
   // branch hides it, so we need to start each call from a clean slate.
   sum.style.display = '';
 
-  // Count both harmless and total across all groups
-  let totalAll       = 0;
-  let totalHarmless  = 0;
+  // Count muted (folded) vs actionable across all groups
+  let totalAll   = 0;
+  let totalMuted = 0;
   for (const g of blocks) {
     for (const r of g.requests) {
       totalAll++;
-      if (r.harmless) totalHarmless++;
+      if (isMutedReq(r, g.blockType)) totalMuted++;
     }
   }
-  const meaningful = totalAll - totalHarmless;
+  const meaningful = totalAll - totalMuted;
 
-  // Harmless button — show count badge only if there are hidden harmless blocks
+  // Toggle button — show count badge only if there are folded muted blocks
   if (hBtn && hBadge) {
-    if (totalHarmless > 0 && !showHarmless) {
+    if (totalMuted > 0 && !showHarmless) {
       hBadge.hidden = false;
-      hBadge.textContent = String(totalHarmless);
+      hBadge.textContent = String(totalMuted);
       hBtn.classList.add('has-hidden');
     } else {
       hBadge.hidden = true;
@@ -361,21 +383,31 @@ function render() {
         <div style="font-size:26px;line-height:1;">✅</div>
         <div style="margin-top:6px;font-size:14px;font-weight:700;color:#065F46;">${esc(t.noBlocks)}</div>
         <div style="margin-top:4px;font-size:11px;line-height:1.4;color:#047857;">${esc(t.noBlocksSub)}</div>
+        ${calmRequestBtnHtml(t)}
       </div>
     `;
+    wireCalmRequestBtn();
     return;
   }
 
-  // Only harmless blocks found — same compact green panel.
-  if (meaningful === 0 && !showHarmless) {
+  // Only NOT-IMPORTANT blocks (ads / trackers / bad content) — never alarm,
+  // whether folded or expanded. Calm green summary, NO page-level "Open NetFree
+  // Request" (you don't file a request for noise). If the user expanded them,
+  // list them below as plain "not a problem" rows.
+  if (meaningful === 0) {
     sum.style.display = 'none';
     list.innerHTML = `
       <div style="margin:14px 12px;padding:14px 14px 16px;background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:10px;text-align:center;">
         <div style="font-size:26px;line-height:1;">✅</div>
         <div style="margin-top:6px;font-size:14px;font-weight:700;color:#065F46;">${esc(t.noMeaningful)}</div>
-        <div style="margin-top:4px;font-size:11px;line-height:1.4;color:#047857;">${esc(t.noMeaningfulSub)}</div>
+        <div style="margin-top:4px;font-size:11px;line-height:1.4;color:#047857;">${esc(t.mutedCountLine(totalMuted))}</div>
+        ${calmRequestBtnHtml(t)}
       </div>
     `;
+    wireCalmRequestBtn();
+    if (showHarmless) {
+      for (const group of displayGroups(blocks)) list.appendChild(buildCard(group, t));
+    }
     return;
   }
 
@@ -383,7 +415,7 @@ function render() {
   const visibleBlocks = blocks
     .map(g => ({
       ...g,
-      requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
+      requests: showHarmless ? g.requests : g.requests.filter(r => !isMutedReq(r, g.blockType)),
     }))
     .filter(g => g.requests.length > 0);
 
@@ -416,7 +448,7 @@ function render() {
     sum.style.display = '';
     sum.className     = 'summary state-blocks';
     sumIc.textContent = '🔴';
-    sumTl.textContent = t.blocksFound(shownTotal);
+    sumTl.textContent = t.blocksFound(meaningful);
     sumSb.textContent = t.blocksSubFound;
     showPageBtn();
   }
@@ -430,6 +462,19 @@ function render() {
       list.appendChild(buildCard(group, t));
     }
   }
+}
+
+// A small, always-available "open a request" button for the calm states
+// (no blocks / only not-important blocks). Separate from the alarming block
+// CTA so the user can still file ANY NetFree support request — a general
+// issue, a page that misbehaves without an obvious block, etc.
+function calmRequestBtnHtml(t) {
+  return `<button id="calmRequestBtn" type="button" style="margin-top:12px;background:#fff;border:1px solid #A7F3D0;color:#047857;font-size:12px;font-weight:600;padding:7px 14px;border-radius:8px;cursor:pointer;">${esc(t.openOtherRequest)}</button>`;
+}
+function wireCalmRequestBtn() {
+  document.getElementById('calmRequestBtn')?.addEventListener('click', () => {
+    openTicketWindow(makeTicketUrl(tabUrl, tabUrl, 'site'));
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -1051,7 +1096,7 @@ function buildTicketContent(withUrlList = false, focusGroup = null) {
     const groups = blocks
       .map(g => ({
         ...g,
-        requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
+        requests: showHarmless ? g.requests : g.requests.filter(r => !isMutedReq(r, g.blockType)),
       }))
       .filter(g => g.requests.length > 0);
     const sections = groups.map(g => {
@@ -1219,7 +1264,7 @@ async function createTrafficRecordingUrl() {
     const groups = blocks
       .map(g => ({
         ...g,
-        requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
+        requests: showHarmless ? g.requests : g.requests.filter(r => !isMutedReq(r, g.blockType)),
       }))
       .filter(g => g.requests.length > 0);
     if (groups.length === 0) return null;
@@ -1255,7 +1300,7 @@ async function copyReport() {
   const groups = blocks
     .map(g => ({
       ...g,
-      requests: showHarmless ? g.requests : g.requests.filter(r => !r.harmless),
+      requests: showHarmless ? g.requests : g.requests.filter(r => !isMutedReq(r, g.blockType)),
     }))
     .filter(g => g.requests.length > 0);
 
@@ -1427,8 +1472,14 @@ function uniqueFiles(requests) {
 // mis-file a video/file block as a "Website Review").
 function ticketKindFor(group) {
   const RANK = { site: 1, error: 1, file: 2, video: 3 };
+  // Ad/tracker noise never drives a review kind — even when NetFree codes it
+  // oddly (e.g. google.com/complete/s comes back as risk-type / "file"). So a
+  // harmless block never renders the "Send file/video for review" CTA, even
+  // when the user unfolds the muted group.
+  const reqs = group.requests.filter(r => !r.harmless);
+  if (!reqs.length) return kindFromType('site');    // nothing actionable → plain card, no CTA
   let bestType = null, sawCode = false, sawRequestable = false;
-  for (const r of group.requests) {
+  for (const r of reqs) {
     const type = requestTypeForCode(r.blockCode);
     if (type === undefined) continue;                 // no/unknown code
     sawCode = true;
@@ -1439,7 +1490,7 @@ function ticketKindFor(group) {
   if (sawRequestable) return kindFromType(bestType);
   if (sawCode) return { type: null, labelKey: null };  // every code was noRequest
   // No usable codes at all → fall back to explicit video host/extension.
-  if (group.requests.some(r => isVideoUrl(r.url))) return kindFromType('video');
+  if (reqs.some(r => isVideoUrl(r.url))) return kindFromType('video');
   return kindFromType('site');
 }
 
@@ -1522,6 +1573,14 @@ function displayGroups(groups) {
 
   const merged = [...byHost.values()].map(e => {
     const group = { domain: e.domain, requests: e.requests, blockType: 'unknown' };
+    // A host with no actionable (non-harmless) request is pure ad/tracker noise.
+    // Give it a neutral badge and never mark it reviewable, so unfolding it
+    // shows a plain "ad / tracker · not a problem" row, not a "File — review".
+    if (!e.requests.some(r => !r.harmless)) {
+      group.blockType  = 'harmless';
+      group._reviewable = false;
+      return group;
+    }
     const kind  = ticketKindFor(group).type;
     const reviewable = kind === 'file' || kind === 'video';
     // Badge follows the actionable kind when there is one, else the most
