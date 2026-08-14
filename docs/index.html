@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="google-site-verification" content="IKD9u6FDRqYuhhyP4U8fC6ou2Q-4GqCu4iWXx8f8NzE" />
-<title>NetFree Inspector — גלה חסימות נט פרי בכל דף</title>
-<meta name="description" content="תוסף Chrome שמציג חסימות של נט פרי בזמן אמת, מסביר סוג חסימה ופותח בקשת וייטליסט בלחיצה אחת." />
+<title>NetFree Inspector — תוסף עצמאי (לא רשמי) לזיהוי חסימות סינון</title>
+<meta name="description" content="תוסף Chrome עצמאי, מבית מפתח פרטי — אינו מוצר של נט פרי ואינו קשור אליה. מציג בזמן אמת אילו משאבים נחסמו בדף, מסביר את סוג החסימה ומקצר את הדרך לפתיחת בקשת בדיקה." />
 <style>
   :root {
     --bg: #f8fafc;
@@ -178,6 +178,52 @@
 
   .hidden { display: none !important; }
 
+  /* ── "Not affiliated" disclaimer — full-width strip at the very top ── */
+  .disclaimer-bar {
+    background: #fff7ed;
+    border-bottom: 3px solid #ea580c;
+  }
+  .disclaimer {
+    max-width: 920px;
+    margin: 0 auto;
+    /* leave room for the fixed language button (top / inline-end) */
+    padding: 60px 20px 18px;
+    color: #7c2d12;
+    font-size: 14.5px;
+    line-height: 1.6;
+  }
+  @media (min-width: 700px) {
+    .disclaimer { padding: 20px 20px 20px; padding-inline-end: 150px; }
+  }
+  .disclaimer-title {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 800; font-size: 16px; margin-bottom: 6px; color: #7c2d12;
+  }
+  .disclaimer p { margin: 0; }
+  .disclaimer ul { margin: 8px 0 0; padding-inline-start: 20px; }
+  .disclaimer li { margin: 3px 0; }
+
+  .independent-badge {
+    display: inline-block;
+    margin: 0 0 14px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .about-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 22px; box-shadow: var(--shadow);
+    border-inline-start: 4px solid #ea580c;
+  }
+  .about-card p { margin: 0 0 10px; color: var(--muted); font-size: 14.5px; }
+  .about-card p:last-child { margin-bottom: 0; }
+  .about-card b { color: var(--text); }
+
   /* ── Harmless domains browser ── */
   .domains-box {
     background: var(--card); border: 1px solid var(--border);
@@ -235,6 +281,33 @@
 <body>
   <button class="lang-switch" id="langSwitch" type="button">English</button>
 
+  <!-- ── Not-affiliated disclaimer — first thing on the page ── -->
+  <div class="disclaimer-bar">
+    <div class="disclaimer" role="note">
+      <div class="disclaimer-title lang-he">⚠️ תוסף עצמאי — אינו של נט פרי</div>
+      <div class="disclaimer-title lang-en hidden">⚠️ Independent extension — not a NetFree product</div>
+      <p class="lang-he">
+        NetFree Inspector הוא פרויקט פרטי ועצמאי. הוא <b>אינו מוצר של נט פרי</b>,
+        <b>אינו מפותח, נתמך, מאושר או מסופק על ידה</b>, ואין בינו לבין נט פרי כל קשר ארגוני או עסקי.
+      </p>
+      <p class="lang-en hidden">
+        NetFree Inspector is a private, independent project. It is <b>not a NetFree product</b>,
+        it is <b>not developed, supported, endorsed or distributed by NetFree</b>, and there is no
+        organizational or business connection between the two.
+      </p>
+      <ul class="lang-he">
+        <li>לשאלות, תקלות או בקשות בנוגע לתוסף — <b>אין לפנות לנט פרי</b>. פנו למפתח דרך <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">עמוד ה-GitHub של הפרויקט</a>.</li>
+        <li>לשאלות בנוגע לשירות הסינון עצמו, לחסימות ולמדיניות הסינון — פנו לנט פרי ישירות. התוסף אינו חוסם, אינו מתיר ואינו משנה דבר בסינון.</li>
+        <li>השם "נט פרי" / "NetFree" מופיע כאן לצורך תיאורי בלבד — כדי לציין עם איזה שירות התוסף עובד. הסימן שייך לבעליו. התוסף אינו עושה שימוש בלוגו של נט פרי.</li>
+      </ul>
+      <ul class="lang-en hidden">
+        <li>For questions, bugs or requests about the extension — <b>do not contact NetFree</b>. Contact the developer via the <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">project's GitHub page</a>.</li>
+        <li>For questions about the filtering service itself, about blocks or about filtering policy — contact NetFree directly. This extension does not block, unblock or change anything in the filtering.</li>
+        <li>The name "NetFree" / "נט פרי" appears here descriptively only — to state which service the extension works with. The mark belongs to its owner. The extension does not use NetFree's logo.</li>
+      </ul>
+    </div>
+  </div>
+
   <div class="wrap">
 
     <!-- ── Hero ── -->
@@ -249,8 +322,10 @@
       </div>
       <h1 class="lang-he">NetFree Inspector</h1>
       <h1 class="lang-en hidden">NetFree Inspector</h1>
-      <p class="tagline lang-he">גלה חסימות נט פרי בכל דף — מיידי, בשפה שלך, בלחיצה אחת.</p>
-      <p class="tagline lang-en hidden">Instantly see every NetFree block on any page — in your language, one click away.</p>
+      <div class="independent-badge lang-he">תוסף עצמאי של מפתח פרטי · אינו של נט פרי</div>
+      <div class="independent-badge lang-en hidden">Independent project by a private developer · not by NetFree</div>
+      <p class="tagline lang-he">רואה אילו משאבים נחסמו בדף שאתה גולש בו — מיידי, בשפה שלך, בלחיצה אחת.</p>
+      <p class="tagline lang-en hidden">See which resources were blocked on the page you're browsing — instantly, in your language, one click away.</p>
 
       <div class="hero-cta">
         <a class="btn btn-primary" id="storeBtn" href="https://chromewebstore.google.com/detail/netfree-inspector/enapmclemkjcnffgekeknfjcgommamfj" target="_blank" rel="noopener">
@@ -305,8 +380,8 @@
           <span class="emoji">🎥</span>
           <h3 class="lang-he">הקלטת מסך + תעבורה לבקשה</h3>
           <h3 class="lang-en hidden">Screen + traffic recording</h3>
-          <p class="lang-he">הקלט את המסך כדי להדגים חסימה, והתוסף מצרף אותו — יחד עם הקלטת תעבורה שנאספת במקביל — לבקשת וייטליסט מוכנה בנט פרי.</p>
-          <p class="lang-en hidden">Record your screen to demonstrate a block, and the extension attaches it — with a parallel traffic recording — to a ready-to-send NetFree whitelist request.</p>
+          <p class="lang-he">הקלט את המסך כדי להדגים חסימה, והתוסף מצרף אותו — יחד עם הקלטת תעבורה שנאספת במקביל — לטופס בקשת הבדיקה הרגיל של נט פרי, מוכן לשליחה על ידך.</p>
+          <p class="lang-en hidden">Record your screen to demonstrate a block, and the extension attaches it — with a parallel traffic recording — to NetFree's own review-request form, ready for you to send.</p>
         </div>
         <div class="feature">
           <span class="emoji">🛡️</span>
@@ -319,8 +394,8 @@
           <span class="emoji">✨</span>
           <h3 class="lang-he">בקשת וייטליסט במילוי אוטומטי</h3>
           <h3 class="lang-en hidden">Auto-filled whitelist tickets</h3>
-          <p class="lang-he">לחץ "פתח בקשה" — התוסף בונה נושא וגוף הבקשה הכוללים את כל החסימות בדף, פותח את הטופס בנט פרי, וממלא את השדות אוטומטית. לא צריך להעתיק ולהדביק.</p>
-          <p class="lang-en hidden">Click "Open Request" — the extension assembles a full ticket subject + body listing every block on the page, opens the form on NetFree, and fills the fields automatically. No copy-paste needed.</p>
+          <p class="lang-he">לחץ "פתח בקשה" — התוסף בונה נושא וגוף הכוללים את כל החסימות בדף, פותח עבורך את טופס הבקשה הרגיל באתר נט פרי וממלא את השדות. לא צריך להעתיק ולהדביק. השליחה והטיפול בבקשה נעשים מולך ומול נט פרי בלבד — התוסף אינו שולח דבר בשמך ואינו מעורב בהחלטה.</p>
+          <p class="lang-en hidden">Click "Open Request" — the extension assembles a subject + body listing every block on the page, opens NetFree's own request form for you, and fills the fields. No copy-paste needed. Sending and handling the request happen between you and NetFree only — the extension sends nothing on your behalf and has no part in the decision.</p>
         </div>
         <div class="feature">
           <span class="emoji">🔢</span>
@@ -464,6 +539,50 @@
       </a>
     </section>
 
+    <!-- ── Who makes this / legal clarification ── -->
+    <section id="about">
+      <h2 class="lang-he">מי עומד מאחורי התוסף</h2>
+      <h2 class="lang-en hidden">Who is behind this extension</h2>
+      <div class="about-card">
+        <p class="lang-he">
+          NetFree Inspector נכתב ומתוחזק על ידי <b>משתמש פרטי</b>, כפרויקט קוד פתוח בהתנדבות.
+          <b>נט פרי אינה מפתחת אותו, אינה מפיצה אותו, אינה נותנת לו חסות ואינה אחראית לו בשום צורה.</b>
+          כל תקלה, באג או התנהגות לא צפויה של התוסף הם באחריות המפתח בלבד — ולא של נט פרי.
+        </p>
+        <p class="lang-en hidden">
+          NetFree Inspector is written and maintained by a <b>private user</b>, as a volunteer open-source project.
+          <b>NetFree does not develop it, does not distribute it, does not sponsor it and is not responsible for it in any way.</b>
+          Any fault, bug or unexpected behaviour of the extension is the developer's responsibility alone — not NetFree's.
+        </p>
+        <p class="lang-he">
+          התוסף אינו נוגע בסינון עצמו: הוא רק קורא את תשובות הדפדפן ומציג למשתמש מה נחסם בדף.
+          הוא אינו עוקף סינון, אינו מסיר חסימות, אינו משנה הגדרות סינון ואינו מעניק גישה לתוכן חסום.
+        </p>
+        <p class="lang-en hidden">
+          The extension does not touch the filtering itself: it only reads the browser's responses and shows the user what was blocked on the page.
+          It does not bypass filtering, does not remove blocks, does not change filter settings and does not grant access to blocked content.
+        </p>
+        <p class="lang-he">
+          <b>שמות וסימנים:</b> "נט פרי" ו-"NetFree" הם סימנים של בעליהם. השימוש בהם באתר זה ובתוסף הוא
+          שימוש תיאורי בלבד — לציון השירות שאיתו התוסף עובד — ואינו מרמז על שיוך, שיתוף פעולה או אישור.
+          התוסף והאתר אינם עושים שימוש בלוגו, בעיצוב או בסמלים המסחריים של נט פרי.
+        </p>
+        <p class="lang-en hidden">
+          <b>Names and marks:</b> "NetFree" and "נט פרי" are marks of their owner. Their use on this site and in the
+          extension is descriptive only — to identify the service the extension works with — and does not imply
+          affiliation, cooperation or approval. Neither the extension nor this site uses NetFree's logo, design or trade dress.
+        </p>
+        <p class="lang-he">
+          <b>תמיכה בתוסף:</b> <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">פתחו issue ב-GitHub</a>.
+          אין לפנות לתמיכה של נט פרי בנושאי התוסף.
+        </p>
+        <p class="lang-en hidden">
+          <b>Support for the extension:</b> <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">open an issue on GitHub</a>.
+          Please do not contact NetFree support about this extension.
+        </p>
+      </div>
+    </section>
+
     <footer>
       <p class="lang-he">
         NetFree Inspector — קוד פתוח תחת MIT |
@@ -475,8 +594,17 @@
         <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/blob/main/store/privacy-policy.md">Privacy policy</a> |
         <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">Report an issue</a>
       </p>
-      <p>
-        <small>This extension is an independent community project and is not affiliated with or endorsed by NetFree.</small>
+      <p class="lang-he">
+        <small>
+          תוסף פרטי ועצמאי. אינו מוצר של נט פרי ואינו קשור אליה, אינו מפותח, נתמך או מאושר על ידה.
+          "נט פרי" הוא סימן של בעליו, והשימוש בשם כאן הוא תיאורי בלבד.
+        </small>
+      </p>
+      <p class="lang-en hidden">
+        <small>
+          A private, independent extension. Not a NetFree product and not affiliated with NetFree — not developed,
+          supported or endorsed by them. "NetFree" is a mark of its owner; its use here is descriptive only.
+        </small>
       </p>
     </footer>
 
