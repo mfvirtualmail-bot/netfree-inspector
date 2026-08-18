@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────
 const T = {
   he: {
-    subtitle:         'בודק חסימות',
+    subtitle:         'לנט פרי · לא רשמי',
     checking:         'בודק…',
     noBlocks:         'לא נמצאו חסימות',
     noBlocksSub:      'כל הבקשות בדף זה עברו בהצלחה דרך נט פרי.',
@@ -31,7 +31,7 @@ const T = {
     unknown:          '❓ חסום — צד שלישי',
     copyUrl:          'העתק',
     copyAll:          'העתק הכל',
-    openTicket:       'פתח בקשה ב-NetFree ↗',
+    openTicket:       'הקלט תעבורה ופתח בקשה ↗',
     sendForReview:    'שלח לבדיקה ↗',
     sendVideoForReview: 'שלח סרטון לבדיקה ↗',
     sendFileForReview: 'שלח קובץ לבדיקה ↗',
@@ -41,6 +41,7 @@ const T = {
     disableWarnGate:  'בטל את ההתראה ב-NetFree ↗',
     suggestHarmless:  'הצע להוסיף לרשימת פרסומות/מעקב',
     reload:           'רענן ורשום',
+    recordingTraffic: '⏺ מקליט תעבורה…',
     copied:           '✓ הועתק',
     contentCopied:    '✓ תוכן הבקשה הועתק — הדבק עם Ctrl+V',
     requests:         (n) => `${n} ${n === 1 ? 'בקשה' : 'בקשות'}`,
@@ -82,7 +83,7 @@ const T = {
     screenTicketIntro:   (host) => `שלום,\nמצורפת הקלטת מסך שמדגימה את הבעיה שאני נתקל בה${host ? ` באתר ${host}` : ''}. אבקש לבדוק ולאשר. תודה רבה.`,
   },
   en: {
-    subtitle:         'Block Inspector',
+    subtitle:         'for NetFree · unofficial',
     checking:         'Checking…',
     noBlocks:         'No blocks detected',
     noBlocksSub:      'All requests on this page passed through NetFree successfully.',
@@ -108,7 +109,7 @@ const T = {
     unknown:          '❓ Blocked — 3rd party resource',
     copyUrl:          'Copy',
     copyAll:          'Copy All',
-    openTicket:       'Open NetFree Request ↗',
+    openTicket:       'Record traffic & open request ↗',
     sendForReview:    'Send for review ↗',
     sendVideoForReview: 'Send video for review ↗',
     sendFileForReview: 'Send file for review ↗',
@@ -118,6 +119,7 @@ const T = {
     disableWarnGate:  'Disable warning in NetFree ↗',
     suggestHarmless:  'Suggest as ad / tracker (harmless)',
     reload:           'Reload & Record',
+    recordingTraffic: '⏺ Recording traffic…',
     copied:           '✓ Copied',
     contentCopied:    '✓ Request content copied — paste with Ctrl+V',
     requests:         (n) => `${n} request${n !== 1 ? 's' : ''}`,
@@ -271,12 +273,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       openTicketWindow(makeTicketUrl(tabUrl, tabUrl, 'site'));
       return;
     }
-    // The blue page button is the GENERAL request: it describes the page and
-    // attaches a full traffic recording of everything blocked on it. The
-    // file-specific review (t=file, pointing at the blocked file) is ONLY the
-    // green "Send file for review" button on the card — never this one.
-    await stashPendingTicket();
-    openTicketWindow(makeTicketUrl(tabUrl, tabUrl, 'site'));
+    // Start the interactive traffic recording (reload + on-page pill); the user
+    // demonstrates on the page and hits Stop, then the worker opens the form.
+    await startTrafficRecordAndClose(null, makeTicketUrl(tabUrl, tabUrl, 'site'));
   });
   document.getElementById('optionsBtn').addEventListener('click', () => {
     if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
@@ -379,10 +378,9 @@ function render() {
   if (totalAll === 0) {
     sum.style.display = 'none';
     list.innerHTML = `
-      <div style="margin:14px 12px;padding:14px 14px 16px;background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:10px;text-align:center;">
-        <div style="font-size:26px;line-height:1;">✅</div>
-        <div style="margin-top:6px;font-size:14px;font-weight:700;color:#065F46;">${esc(t.noBlocks)}</div>
-        <div style="margin-top:4px;font-size:11px;line-height:1.4;color:#047857;">${esc(t.noBlocksSub)}</div>
+      <div style="margin:10px 12px;padding:10px 12px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:9px;text-align:center;">
+        <div style="font-size:13px;font-weight:700;color:#065F46;">✅&nbsp; ${esc(t.noBlocks)}</div>
+        <div style="margin-top:3px;font-size:10.5px;line-height:1.35;color:#047857;">${esc(t.noBlocksSub)}</div>
         ${calmRequestBtnHtml(t)}
       </div>
     `;
@@ -397,10 +395,9 @@ function render() {
   if (meaningful === 0) {
     sum.style.display = 'none';
     list.innerHTML = `
-      <div style="margin:14px 12px;padding:14px 14px 16px;background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:10px;text-align:center;">
-        <div style="font-size:26px;line-height:1;">✅</div>
-        <div style="margin-top:6px;font-size:14px;font-weight:700;color:#065F46;">${esc(t.noMeaningful)}</div>
-        <div style="margin-top:4px;font-size:11px;line-height:1.4;color:#047857;">${esc(t.mutedCountLine(totalMuted))}</div>
+      <div style="margin:10px 12px;padding:10px 12px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:9px;text-align:center;">
+        <div style="font-size:13px;font-weight:700;color:#065F46;">✅&nbsp; ${esc(t.noMeaningful)}</div>
+        <div style="margin-top:3px;font-size:10.5px;line-height:1.35;color:#047857;">${esc(t.mutedCountLine(totalMuted))}</div>
         ${calmRequestBtnHtml(t)}
       </div>
     `;
@@ -469,7 +466,7 @@ function render() {
 // CTA so the user can still file ANY NetFree support request — a general
 // issue, a page that misbehaves without an obvious block, etc.
 function calmRequestBtnHtml(t) {
-  return `<button id="calmRequestBtn" type="button" style="margin-top:12px;background:#fff;border:1px solid #A7F3D0;color:#047857;font-size:12px;font-weight:600;padding:7px 14px;border-radius:8px;cursor:pointer;">${esc(t.openOtherRequest)}</button>`;
+  return `<button id="calmRequestBtn" type="button" style="margin-top:8px;background:#fff;border:1px solid #A7F3D0;color:#047857;font-size:11.5px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;">${esc(t.openOtherRequest)}</button>`;
 }
 function wireCalmRequestBtn() {
   document.getElementById('calmRequestBtn')?.addEventListener('click', () => {
@@ -609,12 +606,10 @@ function buildCard(group, t) {
   const ticketBtn = card.querySelector('.ticket-btn');
   if (ticketBtn) {
     ticketBtn.addEventListener('click', async () => {
-      // Pass the clicked group so video-focused cards get the short
-      // "I want to watch this video, please review it" body instead
-      // of the generic "checking the console, found these blocks..."
-      // boilerplate.
-      await stashPendingTicket(group);
-      openTicketWindow(ticketBtn.dataset.ticketUrl);
+      // The clicked group gives video/file cards the focused body; the
+      // interactive recording lets the user trigger the blocked resource
+      // (e.g. press play) before stopping.
+      await startTrafficRecordAndClose(group, ticketBtn.dataset.ticketUrl);
     });
   }
 
@@ -791,6 +786,85 @@ function openTicketWindow(url) {
   }
 }
 
+// The request buttons now reload the page and capture the real traffic stream
+// (a few seconds) before the form opens. Show a big, unmissable overlay so the
+// wait reads clearly as "recording in progress", disable the button, and guard
+// against re-entry. innerHTML is saved/restored so an icon in the label lives.
+let ticketBusy = false;
+async function withRecordingState(btn, run) {
+  if (ticketBusy) return;
+  ticketBusy = true;
+  const labelEl = (btn && btn.querySelector('#pageTicketLabel, .btn-label')) || btn;
+  const prevHTML = labelEl ? labelEl.innerHTML : '';
+  if (btn) btn.disabled = true;
+  if (labelEl) labelEl.textContent = T[lang].recordingTraffic;
+  showRecordingOverlay();
+  try {
+    await run();
+  } finally {
+    ticketBusy = false;
+    hideRecordingOverlay();
+    if (btn) btn.disabled = false;
+    if (labelEl) labelEl.innerHTML = prevHTML;
+  }
+}
+
+// Full-popup "recording traffic" overlay: a pulsing red dot, clear title, and
+// an animated progress bar. Injected + styled from JS so it needs no markup in
+// popup.html. Covers the whole popup while the page reloads and the stream is
+// captured, then removed. The little button dot was too subtle — this can't be
+// missed.
+function ensureRecordingOverlayStyles() {
+  if (document.getElementById('rt-overlay-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'rt-overlay-styles';
+  s.textContent = `
+    #rt-overlay { position: fixed; inset: 0; z-index: 99999; display: flex;
+      align-items: center; justify-content: center; padding: 16px;
+      background: rgba(8,15,30,.80); backdrop-filter: blur(2px); }
+    #rt-overlay .rt-card { width: 100%; max-width: 320px; text-align: center; color: #f8fafc;
+      background: #0f172a; border: 1px solid #334155; border-radius: 16px;
+      padding: 24px 20px; box-shadow: 0 20px 50px rgba(0,0,0,.55); }
+    #rt-overlay .rt-dot { width: 46px; height: 46px; border-radius: 50%; margin: 0 auto 16px;
+      background: #ef4444; box-shadow: 0 0 0 0 rgba(239,68,68,.7); animation: rt-pulse 1.2s infinite; }
+    @keyframes rt-pulse { 0%{box-shadow:0 0 0 0 rgba(239,68,68,.7)}
+      70%{box-shadow:0 0 0 20px rgba(239,68,68,0)} 100%{box-shadow:0 0 0 0 rgba(239,68,68,0)} }
+    #rt-overlay .rt-title { font-size: 18px; font-weight: 800; letter-spacing: -.01em; margin-bottom: 7px; }
+    #rt-overlay .rt-sub { font-size: 12.5px; color: #cbd5e1; line-height: 1.55; margin-bottom: 16px; }
+    #rt-overlay .rt-bar { height: 6px; border-radius: 999px; background: #1e293b; overflow: hidden; }
+    #rt-overlay .rt-bar > i { display: block; height: 100%; width: 40%; border-radius: 999px;
+      background: #ef4444; animation: rt-slide 1.15s ease-in-out infinite; }
+    @keyframes rt-slide { 0%{margin-left:-42%} 100%{margin-left:100%} }
+    #rt-overlay .rt-note { margin-top: 13px; font-size: 11px; color: #94a3b8; }
+  `;
+  document.head.appendChild(s);
+}
+function showRecordingOverlay() {
+  ensureRecordingOverlayStyles();
+  if (document.getElementById('rt-overlay')) return;
+  const isHe = lang === 'he';
+  const ov = document.createElement('div');
+  ov.id = 'rt-overlay';
+  ov.setAttribute('role', 'status');
+  ov.setAttribute('aria-live', 'assertive');
+  ov.dir = isHe ? 'rtl' : 'ltr';
+  ov.innerHTML =
+    '<div class="rt-card">' +
+      '<div class="rt-dot" aria-hidden="true"></div>' +
+      '<div class="rt-title">' + (isHe ? 'מקליט תעבורה' : 'Recording traffic') + '</div>' +
+      '<div class="rt-sub">' + (isHe
+        ? 'טוען מחדש את הדף ומתעד את כל התנועה — כמה שניות…'
+        : 'Reloading the page and capturing all traffic — a few seconds…') + '</div>' +
+      '<div class="rt-bar" aria-hidden="true"><i></i></div>' +
+      '<div class="rt-note">' + (isHe ? 'אנא השאירו את החלון פתוח' : 'Please keep this window open') + '</div>' +
+    '</div>';
+  document.body.appendChild(ov);
+}
+function hideRecordingOverlay() {
+  const ov = document.getElementById('rt-overlay');
+  if (ov) ov.remove();
+}
+
 function reqRowHtml(req, opts = {}) {
   const short = shortenUrl(req.url);
   const openBtn = opts.isFileDl
@@ -861,18 +935,32 @@ function detectInitialLang() {
 // Actions
 // ─────────────────────────────────────────────
 async function reloadTab() {
+  // Plain reload now — the traffic recording moved onto "Open Request" (which
+  // reloads and captures on its own), so this button is just a quick reload.
   if (tabId !== null) {
-    // Start a full-traffic recording session *before* reloading so the
-    // reload's very first request is captured — that's what makes the
-    // recording a complete page load, not just the blocks we happened to
-    // see after the fact. The host scopes the session: navigating the tab
-    // to a different site ends it (see background.js).
-    try {
-      await chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId, host: pageHost() });
-    } catch { /* background asleep; recording just won't be full this time */ }
     await chrome.tabs.reload(tabId);
     window.close();
   }
+}
+
+// Start the interactive traffic recording in the worker, then close the popup —
+// the on-page pill takes over so the user can use the site while it records,
+// and the worker opens the request form when they hit Stop. The ticket
+// subject/body are built now (no recording link yet; the worker appends it on
+// stop). withUrlList only for generic site requests, so a failed upload still
+// leaves the block list in the body.
+async function startTrafficRecordAndClose(focusGroup, ticketUrl) {
+  const focusType    = focusGroup ? ticketKindFor(focusGroup).type : null;
+  const isVideoFocus = focusType === 'video' || focusType === 'file';
+  const { subject, body } = buildTicketContent(/* withUrlList */ !isVideoFocus, focusGroup);
+  const trafficLabel = lang === 'he' ? 'הקלטת תעבורה' : 'Traffic recording';
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'START_TRAFFIC_RECORD', tabId,
+      ticket: { subject, body, ticketUrl, trafficLabel },
+    });
+  } catch { /* SW asleep/closing — worst case the recording doesn't start */ }
+  window.close();
 }
 
 async function copyAll() {
@@ -1201,95 +1289,26 @@ async function fetchBlockCodes(urls) {
   }
 }
 
-// Build & upload a NetFree-compatible traffic recording from the
-// currently visible blocks. Returns the netfree.link view URL on
-// success or null when there's nothing to upload.
+// Produce a REAL traffic recording for the current page: ask the worker to
+// reload the tab and capture NetFree's OWN live event stream, then upload it
+// verbatim. Returns the netfree.link view URL, or null when the stream was
+// unavailable (not behind the filter / logged out) — in which case we file the
+// request WITHOUT a recording rather than a synthetic one NetFree would flag as
+// "not a real recording".
+//
+// Why the reload: the stream is live, so the only way to get NetFree's real
+// data (identity / socket / true-category rows) is to capture a page load as
+// it happens. The worker does the whole capture+upload in one wake — see
+// background.js `recordRealTrafficViaReload`. This replaces the old
+// chrome.webRequest reconstruction, which lacked those rows and was detectable.
 async function createTrafficRecordingUrl() {
-  if (!self.NF || typeof self.NF.buildTrafficRecording !== 'function') return null;
-
-  // Prefer the full-traffic recording session captured by "Reload &
-  // Record" — it has the whole page load (accepted + blocked), which is
-  // what lets NetFree support navigate the recording themselves.
-  let rec = null;
+  if (tabId === null) return null;
   try {
-    rec = await chrome.runtime.sendMessage({ type: 'GET_RECORDING', tabId });
-  } catch { /* fall through to the blocks-only fallback */ }
-
-  let arr = null;
-  let usedFullCapture = false;
-  if (rec && rec.active && Array.isArray(rec.requests) && rec.requests.length) {
-    usedFullCapture = true;
-    // The recording layer only knows blocked-vs-not (from the 418). Pull
-    // the richer block-type classification (which the always-on tracker
-    // derived from NetFree's block page) across, so a blacklisted block
-    // reads "Blocked/חסום" while everything else stays the honest
-    // "Undefined". Exact URL match first; same-host match only as a
-    // fallback (a host can mix block types, so URL wins). Accepted
-    // requests carry no block type.
-    const blockTypeByUrl  = {};
-    const blockTypeByHost = {};
-    const blockCodeByUrl  = {};
-    const blockCodeByHost = {};
-    for (const g of blocks) {
-      for (const r of g.requests) {
-        blockTypeByUrl[r.url] = g.blockType;
-        if (r.blockCode) blockCodeByUrl[r.url] = r.blockCode;
-        try {
-          const h = new URL(r.url).hostname;
-          blockTypeByHost[h] = g.blockType;
-          if (r.blockCode) blockCodeByHost[h] = r.blockCode;
-        } catch { /* skip */ }
-      }
-    }
-    // Authoritative: read each blocked row's real code straight from its
-    // 418 body now (via the SW), so the recording matches NetFree exactly —
-    // not whatever the always-on tracker raced to cache. Cached stored
-    // codes are only a fallback if the live read fails.
-    const liveCodes = await fetchBlockCodes(rec.requests.filter(r => r.blocked).map(r => r.url));
-    const reqs = rec.requests.map(r => ({
-      ...r,
-      blockType: r.blocked
-        ? (blockTypeByUrl[r.url] || blockTypeByHost[r.host] || 'unknown')
-        : undefined,
-      // NetFree's own code (deny/unknown/risk-type/…) emitted verbatim so
-      // the viewer's Block-reason matches.
-      blockCode: r.blocked
-        ? (liveCodes[r.url] || blockCodeByUrl[r.url] || blockCodeByHost[r.host] || null)
-        : undefined,
-    }));
-    arr = self.NF.buildTrafficRecording(reqs);
-  } else {
-    // Fallback: no recording session (user didn't reload-record). Build
-    // from the blocked list we have — better than nothing.
-    const groups = blocks
-      .map(g => ({
-        ...g,
-        requests: showHarmless ? g.requests : g.requests.filter(r => !isMutedReq(r, g.blockType)),
-      }))
-      .filter(g => g.requests.length > 0);
-    if (groups.length === 0) return null;
-    // Read each blocked URL's real code now so the recording is faithful.
-    const liveCodes = await fetchBlockCodes(groups.flatMap(g => g.requests.map(r => r.url)));
-    const groupsWithCodes = groups.map(g => ({
-      ...g,
-      requests: g.requests.map(r => ({
-        ...r,
-        blockCode: liveCodes[r.url] || r.blockCode || null,
-      })),
-    }));
-    arr = self.NF.buildTrafficRecording(groupsWithCodes);
+    const res = await chrome.runtime.sendMessage({ type: 'RECORD_REAL_TRAFFIC', tabId });
+    return (res && res.ok && res.url) || null;
+  } catch {
+    return null;
   }
-
-  if (!arr || !arr.length) return null;
-  const url = await self.NF.uploadTrafficRecording(arr);
-
-  // The session served its purpose — end it so the capture doesn't keep
-  // accumulating (and get re-uploaded) after the ticket is filed. A new
-  // "Reload & Record" starts a fresh one.
-  if (usedFullCapture) {
-    try { await chrome.runtime.sendMessage({ type: 'STOP_RECORDING', tabId }); } catch { /* ok */ }
-  }
-  return url;
 }
 
 // Copy a human-readable, shareable report (WhatsApp/email friendly).

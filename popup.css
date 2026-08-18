@@ -112,10 +112,13 @@ body {
 }
 
 .header-subtitle {
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--text-muted);
   letter-spacing: .1px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
 }
 
 .lang-btn {
@@ -642,6 +645,9 @@ body {
   border-color: var(--accent);
 }
 .toolbar-btn.primary:hover { background: var(--accent-hover); }
+/* Icon-only reload: a small square button so a lone ↻ isn't stretched across
+   half the row. Record-screen (flex:1) takes the remaining width. */
+.toolbar-btn.icon-only { flex: 0 0 auto; padding: 8px 13px; }
 
 .screen-rec-btn {
   display: inline-flex;

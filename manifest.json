@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "NetFree Inspector",
-  "version": "1.8.4",
+  "name": "Block Inspector",
+  "version": "1.9.0",
   "description": "גלה חסימות נט פרי בכל דף באחת — Instantly detect NetFree content filter blocks on any page",
   "permissions": [
     "webRequest",
@@ -28,7 +28,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "NetFree Inspector",
+    "default_title": "Block Inspector",
     "default_icon": {
       "16": "icons/icon16-green.png",
       "32": "icons/icon32-green.png",
@@ -47,6 +47,6 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; img-src 'self' https://netfree.link data:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http:"
+    "extension_pages": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http:"
   }
 }

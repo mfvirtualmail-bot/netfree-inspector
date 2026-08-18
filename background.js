@@ -15,6 +15,11 @@ importScripts('harmless-domains.js');
 // flow builds and uploads the parallel traffic recording HERE in the worker,
 // because the popup is usually closed by the time a screen recording stops.
 importScripts('traffic-recording.js');
+// SSE parser/grouper (self.NF.parseSSE / buildRecordingFromEvents / …). Lets
+// the worker capture NetFree's OWN live event stream and upload it verbatim
+// for the "Open Request" flow — a real recording, not a webRequest
+// reconstruction. Same source the screen recorder uses (see recorder.js).
+importScripts('sse-recording.js');
 
 const NETFREE_HOST = 'netfree.link';
 const BLOCK_CODE   = 418;
@@ -323,6 +328,214 @@ function getRecording(tabId) {
 }
 
 // ─────────────────────────────────────────────────────────
+// Real-filter (SSE) traffic capture — held by the service worker
+// ─────────────────────────────────────────────────────────
+// The recording above (chrome.webRequest) can only be REBUILT into NetFree's
+// format — it lacks the filter-internal identity/socket/category rows a real
+// recording carries, so NetFree's reviewers can tell it isn't genuine. Here we
+// instead read NetFree's OWN live event stream and upload it VERBATIM
+// (parser/grouper in sse-recording.js). The result IS NetFree's data —
+// indistinguishable from their native recorder because it is the same source.
+//
+// The stream is live, so it must be captured while the page loads: we start
+// the stream, reload the tab, capture through the load, then stop + upload —
+// all in one worker wake (the active stream keeps the worker alive). The
+// stream host gates on Origin === "https://netfree.link/" exactly; fetch()
+// can't set Origin, so a declarativeNetRequest session rule rewrites it. No
+// credentials — the filter identifies the user by network position.
+const RT_SSE_URL     = 'https://eeapi.internal.netfree.link/traffic/sse';
+const RT_SAVE_URL    = 'https://netfree.link/api/user/save-traffic-record';
+const RT_VIEW_PREFIX = 'https://netfree.link/app/#/tools/traffic/view/';
+const RT_DNR_RULE_ID = 9102;          // sibling of the recorder's 9101; own lifecycle
+const RT_MAX_EVENTS  = 300000;        // hard cap so a long capture can't OOM
+const RT_TAIL_MS     = 3500;          // keep capturing this long after load completes
+const RT_MAX_MS      = 25000;         // hard ceiling on one capture
+
+let rtCap = null;   // { events, diag, abort } while a capture is streaming
+
+async function rtInstallOriginRule() {
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [RT_DNR_RULE_ID],
+    addRules: [{
+      id: RT_DNR_RULE_ID, priority: 1,
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'origin', operation: 'set', value: 'https://netfree.link/' }] },
+      condition: { requestDomains: ['eeapi.internal.netfree.link'], resourceTypes: ['xmlhttprequest', 'other'] },
+    }],
+  });
+}
+function rtRemoveOriginRule() {
+  try { chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [RT_DNR_RULE_ID] }); } catch { /* ok */ }
+}
+
+// Begin consuming the stream. Never throws — a failure just means no real
+// recording (the caller files the request without one, never a fake).
+async function rtStartCapture() {
+  rtStopCapture();                               // only one capture at a time
+  const events = [];
+  const diag = { started: false, ruleOk: false, status: 0, rejected: false, err: null, first: '' };
+  rtCap = { events, diag, abort: null };
+  if (!self.NF || !self.NF.createSSEStreamParser || !chrome.declarativeNetRequest) { diag.err = 'no-api'; return false; }
+  try { await rtInstallOriginRule(); diag.ruleOk = true; }
+  catch (e) { diag.err = 'dnr-rule: ' + ((e && e.message) || 'failed'); return false; }
+  const abort = new AbortController();
+  rtCap.abort = abort;
+  const parser = self.NF.createSSEStreamParser((ev) => { if (events.length < RT_MAX_EVENTS) events.push(ev); });
+  (async () => {
+    try {
+      const res = await fetch(RT_SSE_URL, { credentials: 'omit', signal: abort.signal });
+      diag.started = true; diag.status = res.status;
+      if (!res.ok || !res.body) { diag.err = 'http-' + res.status; return; }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let sniffed = false;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const text = dec.decode(value, { stream: true });
+        // Origin rejected / not behind the filter → an error frame, not a stream.
+        if (!sniffed) {
+          sniffed = true; diag.first = text.slice(0, 120);
+          if (text.includes('some-error')) { diag.rejected = true; diag.err = 'origin-rejected'; events.length = 0; return; }
+        }
+        parser.push(text);
+      }
+    } catch (e) {
+      if (e && e.name !== 'AbortError') diag.err = (e && e.message) || 'stream-error';
+    } finally { parser.flush(); }
+  })();
+  return true;
+}
+
+function rtStopCapture() {
+  if (rtCap && rtCap.abort) { try { rtCap.abort.abort(); } catch { /* ok */ } }
+  rtRemoveOriginRule();
+}
+
+// Build the recording from captured events and upload it verbatim. Returns
+// { ok, url } on success or { ok:false, error } otherwise. Never a fake.
+async function rtBuildAndUpload() {
+  const diag = {
+    at: Date.now(), stream: rtCap ? rtCap.diag : null,
+    events: rtCap ? rtCap.events.length : 0, rows: 0, bytes: 0,
+    status: 0, ok: false, url: null, error: null,
+  };
+  try {
+    if (!self.NF || !rtCap)     { diag.error = 'no-module';                  return { ok: false, error: diag.error }; }
+    if (!rtCap.events.length)   { diag.error = (rtCap.diag && rtCap.diag.err) || 'no-events'; return { ok: false, error: diag.error }; }
+    const rec = self.NF.buildRecordingFromEvents(rtCap.events);
+    diag.rows = rec.length;
+    if (!rec.length)            { diag.error = 'no-rows';                    return { ok: false, error: 'no-rows' }; }
+    const body = JSON.stringify(rec);
+    diag.bytes = body.length;
+    const res = await fetch(RT_SAVE_URL, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'content-type': 'text/plain' }, body,
+    });
+    diag.status = res.status;
+    if (!res.ok)                { diag.error = 'http-' + res.status;         return { ok: false, error: diag.error }; }
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('json'))   { diag.error = 'not-authenticated';          return { ok: false, error: 'not-authenticated' }; }
+    const j = await res.json();
+    if (!j || !j.key)           { diag.error = 'no-key';                     return { ok: false, error: 'no-key' }; }
+    diag.ok = true; diag.url = RT_VIEW_PREFIX + j.key;
+    return { ok: true, url: diag.url, rows: rec.length };
+  } catch (e) {
+    diag.error = (e && e.message) || 'exception';
+    return { ok: false, error: diag.error };
+  } finally {
+    // Persisted so we can see afterwards whether the worker stream worked
+    // (the popup closes and takes its console with it). Mirrors nfSseDiag.
+    try { chrome.storage.local.set({ nfRealTrafficDiag: diag }); } catch { /* ok */ }
+  }
+}
+
+// ── Interactive traffic recording (on-page pill, manual stop) ──────────────
+// The user often must USE the page while it records — click a control, press
+// play on the video they're reporting — so a fixed auto-capture window is
+// wrong. Instead: start the stream, hard-reload (bypassCache, so cached
+// sub-resources are re-fetched over the network and actually land in the
+// recording — the silent cache gap is why NetFree kept asking users to "open a
+// new window / clear cache and redo it"), then show a small on-page pill with a
+// Stop button (traffic-overlay.js). The user demonstrates, hits Stop, and the
+// WORKER uploads the real recording and opens the pre-filled request form — the
+// popup is gone the instant the user clicks the page, so the pill is the
+// control, not the popup.
+const TR_STATE  = 'trafficRec';        // { status:'recording'|'uploading', startedAt, tabId }
+const TR_RESULT = 'trafficRecResult';  // { ok, error?, ts }
+const TR_MAX_MS = 120000;              // 2-min safety cap if the user forgets to stop
+
+let trTabId      = null;               // tab of the active interactive recording
+let trTicket     = null;               // { subject, body, ticketUrl, trafficLabel }
+let trCapTimer   = null;
+let trFinalizing = false;
+
+async function trSet(state) {
+  try { if (state) await chrome.storage.local.set({ [TR_STATE]: state }); else await chrome.storage.local.remove(TR_STATE); }
+  catch { /* pill just won't reflect it */ }
+}
+async function trResult(result) {
+  try { await chrome.storage.local.set({ [TR_RESULT]: { ...result, ts: Date.now() } }); } catch { /* ok */ }
+}
+function openTicketPopup(url) {
+  if (!url) return;
+  try { chrome.windows.create({ url, type: 'popup', width: 520, height: 720 }); }
+  catch { try { chrome.tabs.create({ url }); } catch { /* ok */ } }
+}
+async function injectTrafficOverlay(tabId) {
+  try { await chrome.scripting.executeScript({ target: { tabId }, files: ['traffic-overlay.js'] }); }
+  catch { /* chrome:// / store / blocked page — pill just won't show; capture still runs */ }
+}
+
+async function startInteractiveTrafficRecord({ tabId, ticket }) {
+  if (tabId == null)   return { ok: false, error: 'no-tab' };
+  if (trTabId != null) return { ok: false, error: 'busy' };
+  trTabId = tabId; trTicket = ticket || null; trFinalizing = false;
+  await rtStartCapture();
+  await new Promise((r) => setTimeout(r, 400));      // let the stream connect first
+  await trSet({ status: 'recording', startedAt: Date.now(), tabId });
+  try { await chrome.tabs.reload(tabId, { bypassCache: true }); } catch { /* tab gone */ }
+  // The onCompleted listener below (re)injects the pill once the page is ready;
+  // nudge it too in case that timing is missed.
+  setTimeout(() => injectTrafficOverlay(tabId), 1200);
+  if (trCapTimer) clearTimeout(trCapTimer);
+  trCapTimer = setTimeout(() => { stopInteractiveTrafficRecord('cap'); }, TR_MAX_MS);
+  return { ok: true };
+}
+
+async function stopInteractiveTrafficRecord(/* reason */) {
+  if (trFinalizing || trTabId == null) return;
+  trFinalizing = true;
+  if (trCapTimer) { clearTimeout(trCapTimer); trCapTimer = null; }
+  const ticket = trTicket;
+  try {
+    await trSet({ status: 'uploading', startedAt: Date.now(), tabId: trTabId });
+    rtStopCapture();
+    await new Promise((r) => setTimeout(r, 60));     // let the aborted reader flush its last line
+    const res = await rtBuildAndUpload();
+    // Assemble the final ticket and open the form (the popup is long gone).
+    let body = (ticket && ticket.body) || '';
+    if (res.ok && res.url) {
+      const label = (ticket && ticket.trafficLabel) || 'הקלטת תעבורה';
+      body = `${body}\n\n${label}: ${res.url}`;
+    }
+    if (ticket && ticket.subject != null) {
+      try { await chrome.storage.local.set({ pendingTicket: { subject: ticket.subject, body, ts: Date.now() } }); } catch { /* ok */ }
+    }
+    if (ticket && ticket.ticketUrl) openTicketPopup(ticket.ticketUrl);
+    await trResult({ ok: !!res.ok, error: res.ok ? null : (res.error || 'error') });
+  } finally {
+    await trSet(null);
+    rtCap = null;
+    trTabId = null; trTicket = null; trFinalizing = false;
+  }
+}
+
+// Keep the on-page pill alive across in-tab navigation during a recording.
+chrome.webNavigation.onCompleted.addListener((d) => {
+  if (trTabId != null && d.tabId === trTabId && d.frameId === 0) injectTrafficOverlay(d.tabId);
+});
+
+// ─────────────────────────────────────────────────────────
 // Screen recording → NetFree upload → embedded in a ticket
 // ─────────────────────────────────────────────────────────
 // NetFree's own filter lets a user record their screen and attach the video
@@ -396,10 +609,27 @@ async function closeRecorderWindow(winId) {
 // demonstrates in other tabs, so recording survives navigation. It reports
 // RECORDER_STARTED / RECORDER_DONE / RECORDER_ERROR back here.
 async function startScreenRecording({ tabId, host, ticket }) {
-  const existing = await srGet();
-  if (existing && ['picking', 'recording', 'uploading'].includes(existing.status)) {
-    return { ok: false, reason: 'busy' };
-  }
+  // Always start from a clean slate — close any previous recorder window and
+  // wipe all screen-rec state first (this is exactly the "close all previous on
+  // start" the user asked for). A stale/orphaned session otherwise RACES the
+  // new launch: when a just-closed window's beforeunload fires a late
+  // RECORDER_ABORTED, it lands on the fresh 'picking' state and clears it, so
+  // the new recorder window's guard sees no session and closes instantly — the
+  // "works once, then blinks & closes" bug (verified: screenRec came back
+  // `undefined` after a failed attempt = the state was wiped, not stuck).
+  //
+  // The fix: reset, then WAIT so those stale RECORDER_ABORTED messages arrive
+  // and no-op against the now-null state, and only THEN set 'picking'.
+  srFinalizing = true;                          // block any in-flight terminal handler
+  await closeAllRecorderWindows();
+  await srSet(null);
+  clearWatchdog();
+  clearOriginRuleBackstop();
+  try { await chrome.storage.local.remove(['screenRecUpload']); } catch { /* ok */ }
+  srFinalizing = false;
+  // Drain: let the closed windows' beforeunload aborts land against null state.
+  await new Promise((r) => setTimeout(r, 400));
+
   await srSet({ status: 'picking', startedAt: 0, tabId: tabId ?? null, host: host || '', ticket: ticket || null });
 
   let win = null;
@@ -511,6 +741,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 // The recorder page reported the picker was cancelled or failed.
 async function handleRecorderCancelled(err) {
+  if (srFinalizing) return;                      // a reset/finalize is in progress — ignore stale events
   const st = await srGet();
   if (!st || st.status !== 'picking') return;   // already recording — ignore
   await srSet(null);
@@ -524,6 +755,7 @@ async function handleRecorderCancelled(err) {
 // The recorder window was closed by hand mid-recording (no Stop). The capture
 // in that page is gone — nothing to upload. Clear state; no ticket.
 async function handleRecorderAborted() {
+  if (srFinalizing) return;                      // a reset/finalize is in progress — ignore stale events
   const st = await srGet();
   if (!st || (st.status !== 'recording' && st.status !== 'picking')) return;
   await srSet(null);
@@ -1422,6 +1654,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     case 'GET_RECORDING':
       // Ensure a post-restart session is restored before answering.
       hydrateRecordings().then(() => reply(getRecording(msg.tabId)));
+      return true;
+
+    // Interactive traffic recording: reload + capture NetFree's OWN live stream
+    // while the user uses the page, then Stop → upload verbatim + open the form.
+    case 'START_TRAFFIC_RECORD':
+      startInteractiveTrafficRecord(msg).then(reply);
+      return true;
+
+    case 'TRAFFIC_RECORD_STOP':   // from the on-page pill (traffic-overlay.js)
+      stopInteractiveTrafficRecord('user').then(() => reply({ ok: true }));
       return true;
 
     // ── Screen recording (video) ────────────────────────────────────────
