@@ -39,7 +39,7 @@
       done:      '✓ ההקלטה הועלתה — טופס הבקשה נפתח',
       partial:   'טופס הבקשה נפתח — אך העלאת הווידאו נכשלה',
       failed:    'העלאת ההקלטה נכשלה',
-      notAuth:   'יש להתחבר ל-NetFree כדי להעלות הקלטה',
+      notAuth:   'התחבר לנט פרי ונסה שוב',
       dragHint:  'אפשר לגרור את הכפתור לכל מקום',
     },
     en: {
@@ -49,7 +49,7 @@
       done:      '✓ Recording uploaded — request form opened',
       partial:   'Request form opened — but the video upload failed',
       failed:    'Recording upload failed',
-      notAuth:   'Log in to NetFree to upload the recording',
+      notAuth:   'Log into NetFree, then record again',
       dragHint:  'Drag to move this button anywhere',
     },
   };

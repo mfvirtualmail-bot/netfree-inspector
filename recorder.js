@@ -406,11 +406,24 @@ async function uploadRecording(blob) {
   form.append('file', blob, `netfree-inspector-recording.${ext}`);
 
   const res = await fetch(UPLOAD_URL, { method: 'POST', credentials: 'include', body: form });
+  const ct  = (res.headers.get('content-type') || '').toLowerCase();
+  // Diagnostics — this window closes and takes its console with it, so persist
+  // NetFree's ACTUAL response whenever the upload isn't a clean JSON success.
+  // "not-authenticated" is only a guess; the snippet shows what really happened.
+  const diag = { at: Date.now(), status: res.status, ok: res.ok, contentType: ct, size: blob.size, snippet: '' };
+  if (!res.ok || !ct.includes('json')) {
+    try { diag.snippet = (await res.clone().text()).slice(0, 240); } catch { /* ok */ }
+    try { chrome.storage.local.set({ nfVideoUploadDiag: diag }); } catch { /* ok */ }
+  }
   if (!res.ok) throw new Error(`http-${res.status}`);
-  const ct = (res.headers.get('content-type') || '').toLowerCase();
-  if (!ct.includes('json')) throw new Error('not-authenticated');   // logged-out → HTML login page
+  if (!ct.includes('json')) throw new Error('not-authenticated');   // usually an HTML login page
   const json = await res.json();
-  if (!json || !json.filekey) throw new Error('no-filekey');
+  if (!json || !json.filekey) {
+    diag.snippet = JSON.stringify(json).slice(0, 240);
+    try { chrome.storage.local.set({ nfVideoUploadDiag: diag }); } catch { /* ok */ }
+    throw new Error('no-filekey');
+  }
+  try { chrome.storage.local.set({ nfVideoUploadDiag: { ...diag, ok: true } }); } catch { /* ok */ }
   return json.filekey;
 }
 

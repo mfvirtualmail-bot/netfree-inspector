@@ -481,6 +481,45 @@ function openTicketPopup(url) {
   try { chrome.windows.create({ url, type: 'popup', width: 520, height: 720 }); }
   catch { try { chrome.tabs.create({ url }); } catch { /* ok */ } }
 }
+
+// The netfree.link ACCOUNT session (a website cookie, separate from being behind
+// the filter) can expire, and uploads then come back "not-authenticated". When
+// that happens we send the user straight to log in — an empty ticket form is
+// useless — with a clear "log in and record again" pill. We never store their
+// password; this just reuses their real browser login.
+const NF_LOGIN_URL = 'https://netfree.link/app/#/login';
+function openNetfreeLogin() { openTicketPopup(NF_LOGIN_URL); }
+
+// "Do we have an active NetFree account session?" — run BEFORE a recording so a
+// logged-out session can't waste the whole recording (nothing to upload it to).
+// Instead of reading a cookie (which can linger after logout and needs the
+// cookies permission), this ASKS NetFree directly with a tiny harmless request:
+// look up a non-existent traffic record. Logged IN → the API answers in JSON;
+// logged OUT → NetFree serves the HTML login page. So content-type JSON = we
+// have a session. On a network error we DON'T block (return true) — never trap
+// the user. The probe result is stashed (nfLoginProbe) for diagnosis.
+async function isNetfreeLoggedIn() {
+  const diag = { at: Date.now(), status: 0, contentType: '', body: '', loggedIn: true, error: null };
+  try {
+    const res = await fetch('https://netfree.link/api/user/get-traffic-record', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'nfi-auth-probe' }),
+    });
+    diag.status = res.status;
+    diag.contentType = (res.headers.get('content-type') || '').toLowerCase();
+    // Verified live: logged IN → the API answers application/json; logged OUT →
+    // NetFree serves its HTML login page (text/html). So a JSON content-type
+    // means we have a session.
+    diag.loggedIn = diag.contentType.includes('json');
+  } catch (e) {
+    diag.error = (e && e.message) || 'error';
+    diag.loggedIn = true;
+  }
+  try { chrome.storage.local.set({ nfLoginProbe: diag }); } catch { /* ok */ }
+  return diag.loggedIn;
+}
 async function injectTrafficOverlay(tabId) {
   try { await chrome.scripting.executeScript({ target: { tabId }, files: ['traffic-overlay.js'] }); }
   catch { /* chrome:// / store / blocked page — pill just won't show; capture still runs */ }
@@ -489,6 +528,8 @@ async function injectTrafficOverlay(tabId) {
 async function startInteractiveTrafficRecord({ tabId, ticket }) {
   if (tabId == null)   return { ok: false, error: 'no-tab' };
   if (trTabId != null) return { ok: false, error: 'busy' };
+  // Don't reload + record into a logged-out session — send them to log in first.
+  if (!(await isNetfreeLoggedIn())) { openNetfreeLogin(); return { ok: false, error: 'not-logged-in' }; }
   trTabId = tabId; trTicket = ticket || null; trFinalizing = false;
   await rtStartCapture();
   await new Promise((r) => setTimeout(r, 400));      // let the stream connect first
@@ -518,10 +559,16 @@ async function stopInteractiveTrafficRecord(/* reason */) {
       const label = (ticket && ticket.trafficLabel) || 'הקלטת תעבורה';
       body = `${body}\n\n${label}: ${res.url}`;
     }
-    if (ticket && ticket.subject != null) {
-      try { await chrome.storage.local.set({ pendingTicket: { subject: ticket.subject, body, ts: Date.now() } }); } catch { /* ok */ }
+    if (!res.ok && res.error === 'not-authenticated') {
+      // Logged out of the netfree.link account — the recording is already lost
+      // and the ticket form would just bounce to login, so send them there.
+      openNetfreeLogin();
+    } else {
+      if (ticket && ticket.subject != null) {
+        try { await chrome.storage.local.set({ pendingTicket: { subject: ticket.subject, body, ts: Date.now() } }); } catch { /* ok */ }
+      }
+      if (ticket && ticket.ticketUrl) openTicketPopup(ticket.ticketUrl);
     }
-    if (ticket && ticket.ticketUrl) openTicketPopup(ticket.ticketUrl);
     await trResult({ ok: !!res.ok, error: res.ok ? null : (res.error || 'error') });
   } finally {
     await trSet(null);
@@ -609,6 +656,9 @@ async function closeRecorderWindow(winId) {
 // demonstrates in other tabs, so recording survives navigation. It reports
 // RECORDER_STARTED / RECORDER_DONE / RECORDER_ERROR back here.
 async function startScreenRecording({ tabId, host, ticket }) {
+  // Logged-out check FIRST — a screen recording is worthless if we can't upload
+  // it at the end, so stop up front and send the user to log in.
+  if (!(await isNetfreeLoggedIn())) { openNetfreeLogin(); return { ok: false, reason: 'not-logged-in' }; }
   // Always start from a clean slate — close any previous recorder window and
   // wipe all screen-rec state first (this is exactly the "close all previous on
   // start" the user asked for). A stale/orphaned session otherwise RACES the
@@ -701,6 +751,17 @@ async function handleRecorderStarted() {
   // window back to 'normal'. After that it stays minimized so a user who
   // deliberately restores it later isn't fought.
   minimizeRecorderWindow(st.recorderWinId);
+
+  // Hard-reload the tab this recording was launched from so cached sub-resources
+  // re-fetch over the network and land in the captured traffic — the same
+  // cache-busting the traffic recording does (otherwise cached items never hit
+  // NetFree's filter and are invisible in the recording). The short delay lets
+  // the recorder window's SSE stream connect first, so the reload's very first
+  // events are captured too. The video then also shows the page loading fresh.
+  if (st.tabId != null) {
+    const reloadTabId = st.tabId;
+    setTimeout(() => { try { chrome.tabs.reload(reloadTabId, { bypassCache: true }); } catch { /* tab gone */ } }, 700);
+  }
 }
 
 function minimizeRecorderWindow(winId) {
@@ -941,10 +1002,16 @@ async function failScreenRecording(error, phase, streamTrafficUrl) {
           console.warn('[NetFree Inspector] traffic-recording upload failed:', e?.message || e);
         }
       }
-      try {
-        await finalizeScreenTicket(st, null, trafficUrl, trafficFailed);
-        ticketOpened = true;
-      } catch { /* form didn't open — plain failure toast below */ }
+      if (error === 'not-authenticated' && !trafficUrl) {
+        // Fully logged out of netfree.link — nothing uploaded and the ticket
+        // form is useless. Send them to log in and record again.
+        openNetfreeLogin();
+      } else {
+        try {
+          await finalizeScreenTicket(st, null, trafficUrl, trafficFailed);
+          ticketOpened = true;
+        } catch { /* form didn't open — plain failure toast below */ }
+      }
     }
     await grecStop();
     await srSet(null);
@@ -1086,12 +1153,9 @@ async function finalizeScreenTicket(state, filekey, trafficUrl, trafficFailed) {
   const u         = encodeURIComponent(target);
   const r         = encodeURIComponent(pageUrl);
   const ticketUrl = `https://netfree.link/app/#/tickets/new?u=${u}&r=${r}&t=${encodeURIComponent(type)}&bi=`;
-  try {
-    const tab = await chrome.tabs.create({ url: ticketUrl, active: true });
-    try { await chrome.windows.update(tab.windowId, { focused: true }); } catch { /* ok */ }
-  } catch {
-    try { await chrome.windows.create({ url: ticketUrl }); } catch { /* nothing more we can do */ }
-  }
+  // Separate popup window (matches the popup's buttons + the interactive traffic
+  // flow), NOT a browser tab — keeps the request form out of the user's tab strip.
+  openTicketPopup(ticketUrl);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1664,6 +1728,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
     case 'TRAFFIC_RECORD_STOP':   // from the on-page pill (traffic-overlay.js)
       stopInteractiveTrafficRecord('user').then(() => reply({ ok: true }));
+      return true;
+
+    case 'CHECK_NETFREE_LOGIN':   // popup shows a warning banner when logged out
+      isNetfreeLoggedIn().then(loggedIn => reply({ loggedIn }));
+      return true;
+
+    case 'OPEN_NETFREE_LOGIN':
+      openNetfreeLogin();
+      reply({ ok: true });
       return true;
 
     // ── Screen recording (video) ────────────────────────────────────────

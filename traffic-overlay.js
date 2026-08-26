@@ -30,7 +30,7 @@
       uploading: 'מעלה הקלטה…',
       done:      '✓ ההקלטה מוכנה — טופס הבקשה נפתח',
       failed:    'העלאת ההקלטה נכשלה',
-      notAuth:   'יש להתחבר כדי להעלות הקלטה',
+      notAuth:   'התחבר לנט פרי ונסה שוב',
     },
     en: {
       recording: 'Recording traffic',
@@ -39,7 +39,7 @@
       uploading: 'Uploading recording…',
       done:      '✓ Recording ready — request form opened',
       failed:    'Recording upload failed',
-      notAuth:   'Log in to upload the recording',
+      notAuth:   'Log into NetFree, then record again',
     },
   };
 

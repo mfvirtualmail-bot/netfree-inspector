@@ -258,6 +258,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Fetch block data from the service worker
   await loadBlocks();
 
+  // Warn up front if the NetFree account session is missing, so the user knows
+  // BEFORE recording that an upload would fail.
+  checkNetfreeLogin();
+
   // Wire up buttons
   document.getElementById('langBtn').addEventListener('click', toggleLang);
   document.getElementById('reloadBtn').addEventListener('click', reloadTab);
@@ -961,6 +965,40 @@ async function startTrafficRecordAndClose(focusGroup, ticketUrl) {
     });
   } catch { /* SW asleep/closing — worst case the recording doesn't start */ }
   window.close();
+}
+
+// Ask the worker whether we have an active NetFree account session; if not,
+// drop a warning banner at the top of the popup with a Log in button — so the
+// user sees it BEFORE recording, not after a failed upload.
+async function checkNetfreeLogin() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'CHECK_NETFREE_LOGIN' });
+    if (res && res.loggedIn === false) showLoginWarning();
+  } catch { /* can't check — stay quiet */ }
+}
+function showLoginWarning() {
+  if (document.getElementById('nf-login-warn')) return;
+  const isHe = lang === 'he';
+  const bar = document.createElement('div');
+  bar.id = 'nf-login-warn';
+  bar.dir = isHe ? 'rtl' : 'ltr';
+  bar.style.cssText = 'margin:8px 12px;padding:9px 12px;background:#FEF3C7;border:1px solid #FCD34D;' +
+    'border-radius:9px;color:#92400E;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;justify-content:space-between;';
+  const msg = document.createElement('span');
+  msg.textContent = isHe ? '⚠ אינך מחובר לנט פרי — הקלטות לא יישלחו' : "⚠ Logged out of NetFree — recordings won't send";
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = isHe ? 'התחבר' : 'Log in';
+  btn.style.cssText = 'flex:none;background:#F59E0B;border:none;color:#fff;font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:7px;cursor:pointer;';
+  btn.addEventListener('click', () => {
+    try { chrome.runtime.sendMessage({ type: 'OPEN_NETFREE_LOGIN' }); } catch { /* ok */ }
+    window.close();
+  });
+  bar.append(msg, btn);
+  const app = document.getElementById('app');
+  const pageBar = document.querySelector('.page-bar');
+  if (pageBar && pageBar.parentNode === app) app.insertBefore(bar, pageBar.nextSibling);
+  else if (app) app.insertBefore(bar, app.firstChild);
 }
 
 async function copyAll() {
