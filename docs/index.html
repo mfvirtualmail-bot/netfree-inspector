@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="google-site-verification" content="IKD9u6FDRqYuhhyP4U8fC6ou2Q-4GqCu4iWXx8f8NzE" />
-<title>NetFree Inspector — תוסף עצמאי (לא רשמי) לזיהוי חסימות סינון</title>
+<title>Block Inspector for NetFree — תוסף עצמאי (לא רשמי) לזיהוי חסימות סינון</title>
 <meta name="description" content="תוסף Chrome עצמאי, מבית מפתח פרטי — אינו מוצר של נט פרי ואינו קשור אליה. מציג בזמן אמת אילו משאבים נחסמו בדף, מסביר את סוג החסימה ומקצר את הדרך לפתיחת בקשת בדיקה." />
 <style>
   :root {
@@ -287,11 +287,11 @@
       <div class="disclaimer-title lang-he">⚠️ תוסף עצמאי — אינו של נט פרי</div>
       <div class="disclaimer-title lang-en hidden">⚠️ Independent extension — not a NetFree product</div>
       <p class="lang-he">
-        NetFree Inspector הוא פרויקט פרטי ועצמאי. הוא <b>אינו מוצר של נט פרי</b>,
+        "בודק חסימות לנט פרי" (Block Inspector for NetFree) הוא פרויקט פרטי ועצמאי. הוא <b>אינו מוצר של נט פרי</b>,
         <b>אינו מפותח, נתמך, מאושר או מסופק על ידה</b>, ואין בינו לבין נט פרי כל קשר ארגוני או עסקי.
       </p>
       <p class="lang-en hidden">
-        NetFree Inspector is a private, independent project. It is <b>not a NetFree product</b>,
+        Block Inspector for NetFree is a private, independent project. It is <b>not a NetFree product</b>,
         it is <b>not developed, supported, endorsed or distributed by NetFree</b>, and there is no
         organizational or business connection between the two.
       </p>
@@ -320,8 +320,8 @@
                     stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
-      <h1 class="lang-he">NetFree Inspector</h1>
-      <h1 class="lang-en hidden">NetFree Inspector</h1>
+      <h1 class="lang-he">בודק חסימות לנט פרי</h1>
+      <h1 class="lang-en hidden">Block Inspector for NetFree</h1>
       <div class="independent-badge lang-he">תוסף עצמאי של מפתח פרטי · אינו של נט פרי</div>
       <div class="independent-badge lang-en hidden">Independent project by a private developer · not by NetFree</div>
       <p class="tagline lang-he">רואה אילו משאבים נחסמו בדף שאתה גולש בו — מיידי, בשפה שלך, בלחיצה אחת.</p>
@@ -343,12 +343,12 @@
     <section id="beta">
       <div class="beta-card">
         <div class="beta-head">
-          <span class="beta-badge">v1.8.2</span>
+          <span class="beta-badge">v1.9.1</span>
           <h2 class="lang-he">קבל את הגרסה החדשה עכשיו</h2>
           <h2 class="lang-en hidden">Get the newest version early</h2>
         </div>
-        <p class="lang-he" style="margin:0;color:var(--muted);font-size:14.5px;"><b style="color:var(--text);">גרסה 1.8.2.</b> הגרסה בחנות Chrome מתעדכנת לפי לוח הבדיקה של Google. רוצה כבר עכשיו את הגרסה האחרונה? התקן אותה ידנית:</p>
-        <p class="lang-en hidden" style="margin:0;color:var(--muted);font-size:14.5px;"><b style="color:var(--text);">Version 1.8.2.</b> The Chrome Web Store copy updates on Google's review schedule. Want the newest build right now? Install it manually:</p>
+        <p class="lang-he" style="margin:0;color:var(--muted);font-size:14.5px;"><b style="color:var(--text);">גרסה 1.9.1.</b> הגרסה בחנות Chrome מתעדכנת לפי לוח הבדיקה של Google. רוצה כבר עכשיו את הגרסה האחרונה? התקן אותה ידנית:</p>
+        <p class="lang-en hidden" style="margin:0;color:var(--muted);font-size:14.5px;"><b style="color:var(--text);">Version 1.9.1.</b> The Chrome Web Store copy updates on Google's review schedule. Want the newest build right now? Install it manually:</p>
         <ol class="beta-steps">
           <li class="lang-he">הורד את קובץ ה-ZIP למטה וחלץ אותו.</li>
           <li class="lang-en hidden">Download the ZIP below and unzip it.</li>
@@ -358,10 +358,10 @@
           <li class="lang-en hidden">Click <b>Load unpacked</b> and select the unzipped folder — the one containing <code>manifest.json</code>.</li>
         </ol>
         <div style="display:flex;gap:10px;align-items:flex-start;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;padding:12px 14px;font-size:13.5px;margin-bottom:20px;line-height:1.5;">
-          <span aria-hidden="true">🎥</span>
+          <span aria-hidden="true">🔄</span>
           <span>
-            <span class="lang-he">חדש ב-1.8.2: בבקשת בדיקה על <b style="color:#1e3a8a;">סרטון או קובץ חסום</b>, הבקשה כוללת עכשיו את הדף שממנו הגעת ואת הקישור הישיר לקובץ — כדי שנט פרי תראה בדיוק היכן המשאב נחוץ, לא רק קישור בודד.</span>
-            <span class="lang-en hidden">New in 1.8.2: a review request for a <b style="color:#1e3a8a;">blocked video or file</b> now includes the page you came from and the direct link to the file — so NetFree sees exactly where the resource is needed, not just a bare link.</span>
+            <span class="lang-he">חדש ב-1.9.1: ההקלטות עכשיו <b style="color:#1e3a8a;">מרוקנות את המטמון (cache) וטוענות את הדף מחדש</b> — כך שכל משאב נטען שוב דרך הרשת ונכלל בהקלטת התעבורה. נט פרי מקבלת תמונה מלאה ומדויקת של מה שקרה, בלי חלקים שנטענים בשקט מהזיכרון המקומי — כך שאין צורך לבקש "חלון אורח" או לנקות מטמון ידנית.</span>
+            <span class="lang-en hidden">New in 1.9.1: recordings now <b style="color:#1e3a8a;">empty the cache and reload the page</b> — so every resource is re-fetched over the network and captured in the traffic recording. NetFree gets a complete, accurate picture, with nothing silently served from local cache — no need to open a "guest window" or clear the cache by hand.</span>
           </span>
         </div>
         <a class="btn btn-primary" href="https://github.com/mfvirtualmail-bot/netfree-inspector/releases/latest/download/netfree-inspector.zip">
@@ -380,8 +380,8 @@
           <span class="emoji">🎥</span>
           <h3 class="lang-he">הקלטת מסך + תעבורה לבקשה</h3>
           <h3 class="lang-en hidden">Screen + traffic recording</h3>
-          <p class="lang-he">הקלט את המסך כדי להדגים חסימה, והתוסף מצרף אותו — יחד עם הקלטת תעבורה שנאספת במקביל — לטופס בקשת הבדיקה הרגיל של נט פרי, מוכן לשליחה על ידך.</p>
-          <p class="lang-en hidden">Record your screen to demonstrate a block, and the extension attaches it — with a parallel traffic recording — to NetFree's own review-request form, ready for you to send.</p>
+          <p class="lang-he">הקלט את המסך כדי להדגים חסימה, והתוסף מצרף אותו — יחד עם הקלטת תעבורה אמיתית שנאספת במקביל — לטופס בקשת הבדיקה הרגיל של נט פרי, מוכן לשליחה על ידך. לפני ההקלטה המטמון מתרוקן והדף נטען מחדש, כך שההקלטה מלאה — בלי חלקים שנטענים מהזיכרון המקומי.</p>
+          <p class="lang-en hidden">Record your screen to demonstrate a block, and the extension attaches it — with a real traffic recording captured in parallel — to NetFree's own review-request form, ready for you to send. The cache is cleared and the page reloads first, so the recording is complete — nothing served silently from local cache.</p>
         </div>
         <div class="feature">
           <span class="emoji">🛡️</span>
@@ -545,12 +545,12 @@
       <h2 class="lang-en hidden">Who is behind this extension</h2>
       <div class="about-card">
         <p class="lang-he">
-          NetFree Inspector נכתב ומתוחזק על ידי <b>משתמש פרטי</b>, כפרויקט קוד פתוח בהתנדבות.
+          "בודק חסימות לנט פרי" נכתב ומתוחזק על ידי <b>משתמש פרטי</b>, כפרויקט קוד פתוח בהתנדבות.
           <b>נט פרי אינה מפתחת אותו, אינה מפיצה אותו, אינה נותנת לו חסות ואינה אחראית לו בשום צורה.</b>
           כל תקלה, באג או התנהגות לא צפויה של התוסף הם באחריות המפתח בלבד — ולא של נט פרי.
         </p>
         <p class="lang-en hidden">
-          NetFree Inspector is written and maintained by a <b>private user</b>, as a volunteer open-source project.
+          Block Inspector for NetFree is written and maintained by a <b>private user</b>, as a volunteer open-source project.
           <b>NetFree does not develop it, does not distribute it, does not sponsor it and is not responsible for it in any way.</b>
           Any fault, bug or unexpected behaviour of the extension is the developer's responsibility alone — not NetFree's.
         </p>
@@ -585,12 +585,12 @@
 
     <footer>
       <p class="lang-he">
-        NetFree Inspector — קוד פתוח תחת MIT |
+        בודק חסימות לנט פרי — קוד פתוח תחת MIT |
         <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/blob/main/store/privacy-policy.md">מדיניות פרטיות</a> |
         <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">דווח על בעיה</a>
       </p>
       <p class="lang-en hidden">
-        NetFree Inspector — MIT-licensed open source |
+        Block Inspector for NetFree — MIT-licensed open source |
         <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/blob/main/store/privacy-policy.md">Privacy policy</a> |
         <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">Report an issue</a>
       </p>
