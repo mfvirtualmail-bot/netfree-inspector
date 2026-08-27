@@ -1141,7 +1141,8 @@
 
   // ── Contact form → FormSubmit relay (no login needed) ──────────────
   (function () {
-    const ENDPOINT = 'https://formsubmit.co/ajax/d712929b323c311dc36d4f7c06bbcc50';
+    // Recipient assembled at runtime so the address isn't scrapeable from the page source
+    const ENDPOINT = 'https://formsubmit.co/ajax/' + ['mf', 'virtualmail'].join('.') + '@' + ['gmail', 'com'].join('.');
     const form   = document.getElementById('contactForm');
     const status = document.getElementById('cfStatus');
     const send   = document.getElementById('cfSend');
