@@ -441,6 +441,36 @@
   .domain-pill.is-path { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
   .domain-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 0; }
 
+  /* ── Contact form ── */
+  .contact-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow-md);
+    max-width: 640px;
+  }
+  .contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  @media (max-width: 640px) { .contact-grid { grid-template-columns: 1fr; } }
+  .field label {
+    display: block; font-size: 13px; font-weight: 700; color: var(--ink-2);
+    margin-bottom: 6px;
+  }
+  .field input, .field textarea {
+    width: 100%; padding: 12px 14px; font: inherit; font-size: 14px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: #f8fafc; color: var(--ink);
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+  }
+  .field input:focus, .field textarea:focus {
+    outline: none; border-color: var(--brand); background: #fff;
+    box-shadow: 0 0 0 3px rgba(26,109,255,.12);
+  }
+  .field textarea { resize: vertical; min-height: 120px; }
+  .field { margin-bottom: 14px; }
+  .contact-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .contact-status { font-size: 13.5px; font-weight: 600; }
+  .contact-status.ok { color: var(--accent); }
+  .contact-status.err { color: var(--alert); }
+  .contact-note { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+
   /* ── About / legal ── */
   .about-card {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
@@ -529,6 +559,7 @@
         <a href="#features"><span class="lang-he">יכולות</span><span class="lang-en hidden">Features</span></a>
         <a href="#beta"><span class="lang-he">התקנה</span><span class="lang-en hidden">Install</span></a>
         <a href="#domains"><span class="lang-he">רשימת דומיינים</span><span class="lang-en hidden">Domains list</span></a>
+        <a href="#contact"><span class="lang-he">צור קשר</span><span class="lang-en hidden">Contact</span></a>
         <a href="#about"><span class="lang-he">אודות</span><span class="lang-en hidden">About</span></a>
       </div>
       <button class="lang-switch" id="langSwitch" type="button">English</button>
@@ -921,6 +952,44 @@
       </a>
     </section>
 
+    <!-- ══ Contact ══ -->
+    <section id="contact" class="reveal">
+      <span class="eyebrow lang-he">צור קשר</span>
+      <span class="eyebrow lang-en hidden">Contact</span>
+      <h2 class="lang-he">השאירו הודעה למפתח</h2>
+      <h2 class="lang-en hidden">Leave the developer a message</h2>
+      <p class="section-lead lang-he">שאלה, תקלה או רעיון? כתבו כאן — ההודעה נשלחת ישירות למפתח. בלי חשבון, בלי הרשמה, בלי GitHub.</p>
+      <p class="section-lead lang-en hidden">A question, a bug, an idea? Write it here — the message goes straight to the developer. No account, no sign-up, no GitHub needed.</p>
+      <form class="contact-card" id="contactForm" novalidate>
+        <div class="contact-grid">
+          <div class="field" style="margin-bottom:0;">
+            <label for="cfName"><span class="lang-he">שם (לא חובה)</span><span class="lang-en hidden">Name (optional)</span></label>
+            <input id="cfName" name="name" type="text" autocomplete="name" data-ph-he="איך לקרוא לך?" data-ph-en="What should we call you?" />
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label for="cfEmail"><span class="lang-he">אימייל לתשובה (לא חובה)</span><span class="lang-en hidden">Reply email (optional)</span></label>
+            <input id="cfEmail" name="email" type="email" autocomplete="email" dir="ltr" data-ph-he="you@example.com" data-ph-en="you@example.com" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="cfMsg"><span class="lang-he">ההודעה</span><span class="lang-en hidden">Your message</span></label>
+          <textarea id="cfMsg" name="message" required data-ph-he="מה רצית לספר לנו?" data-ph-en="What would you like to tell us?"></textarea>
+        </div>
+        <!-- honeypot — bots fill it, people never see it -->
+        <input type="text" name="_honey" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;top:-9999px;" aria-hidden="true" />
+        <div class="contact-foot">
+          <button class="btn btn-primary" id="cfSend" type="submit">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            <span class="lang-he">שלח הודעה</span>
+            <span class="lang-en hidden">Send message</span>
+          </button>
+          <span class="contact-status" id="cfStatus" role="status" aria-live="polite"></span>
+        </div>
+        <p class="contact-note lang-he">ההודעה מועברת למפתח דרך שירות ממסר טפסים (FormSubmit). מעדיפים GitHub? אפשר גם <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">לפתוח issue</a>.</p>
+        <p class="contact-note lang-en hidden">The message is relayed to the developer via a form-relay service (FormSubmit). Prefer GitHub? You can also <a href="https://github.com/mfvirtualmail-bot/netfree-inspector/issues">open an issue</a>.</p>
+      </form>
+    </section>
+
     <!-- ══ Who makes this / legal clarification ══ -->
     <section id="about" class="reveal">
       <span class="eyebrow lang-he">אודות</span>
@@ -1067,6 +1136,67 @@
       const isHe = document.documentElement.lang === 'he';
       toggle.querySelectorAll('.lang-he')[0].textContent = open ? 'סגור' : 'קרא עוד';
       toggle.querySelectorAll('.lang-en')[0].textContent = open ? 'Close' : 'Read more';
+    });
+  })();
+
+  // ── Contact form → FormSubmit relay (no login needed) ──────────────
+  (function () {
+    const ENDPOINT = 'https://formsubmit.co/ajax/d712929b323c311dc36d4f7c06bbcc50';
+    const form   = document.getElementById('contactForm');
+    const status = document.getElementById('cfStatus');
+    const send   = document.getElementById('cfSend');
+    if (!form || !status || !send) return;
+
+    // Bilingual placeholders (placeholder attributes can't hold two languages)
+    function applyPlaceholders() {
+      const isHe = document.documentElement.lang === 'he';
+      document.querySelectorAll('[data-ph-he]').forEach(el => {
+        el.placeholder = isHe ? el.dataset.phHe : el.dataset.phEn;
+      });
+    }
+    applyPlaceholders();
+    document.getElementById('langSwitch').addEventListener('click', () => setTimeout(applyPlaceholders, 0));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const isHe = document.documentElement.lang === 'he';
+      const msg  = form.message.value.trim();
+      if (!msg) {
+        status.className = 'contact-status err';
+        status.textContent = isHe ? 'כתבו הודעה קודם 🙂' : 'Write a message first 🙂';
+        form.message.focus();
+        return;
+      }
+      if (form._honey.value) return; // bot
+      send.disabled = true;
+      status.className = 'contact-status';
+      status.textContent = isHe ? 'שולח…' : 'Sending…';
+      try {
+        const res = await fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            name: form.name.value.trim() || '(no name)',
+            email: form.email.value.trim() || undefined,
+            message: msg,
+            _subject: 'Block Inspector — message from the website',
+            page_language: isHe ? 'he' : 'en'
+          })
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && String(json.success) !== 'false') {
+          status.className = 'contact-status ok';
+          status.textContent = isHe ? '✓ ההודעה נשלחה, תודה!' : '✓ Message sent, thank you!';
+          form.reset();
+        } else { throw new Error('relay refused'); }
+      } catch (err) {
+        status.className = 'contact-status err';
+        status.textContent = isHe
+          ? 'השליחה נכשלה — נסו שוב, או פתחו issue ב-GitHub (קישור למטה).'
+          : 'Sending failed — try again, or open a GitHub issue (link below).';
+      } finally {
+        send.disabled = false;
+      }
     });
   })();
 
