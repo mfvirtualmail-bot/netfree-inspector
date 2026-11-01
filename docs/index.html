@@ -979,8 +979,9 @@
           <label for="cfMsg"><span class="lang-he">ההודעה</span><span class="lang-en hidden">Your message</span></label>
           <textarea id="cfMsg" name="message" required data-ph-he="מה רצית לספר לנו?" data-ph-en="What would you like to tell us?"></textarea>
         </div>
-        <!-- honeypot — bots fill it, people never see it -->
-        <input type="text" name="_honey" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;top:-9999px;" aria-hidden="true" />
+        <!-- honeypot — bots fill it, people never see it. Clipped to 1px in place rather than
+             pushed off-screen: a -9999px offset made the Hebrew (RTL) page scroll sideways. -->
+        <input type="text" name="_honey" tabindex="-1" autocomplete="off" style="position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);opacity:0;pointer-events:none;" aria-hidden="true" />
         <div class="contact-foot">
           <button class="btn btn-primary" id="cfSend" type="submit">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
