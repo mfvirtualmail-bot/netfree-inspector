@@ -347,7 +347,7 @@
   .tag-gray   { background: #eef2f6; color: #475569; }
   .block-row span { color: var(--muted); font-size: 14px; }
 
-  /* ── Install / beta ── */
+  /* ── Install ── */
   .install-card {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -401,6 +401,12 @@
     font-size: 13.5px; margin-bottom: 20px; line-height: 1.55;
   }
   .whats-new b { color: #1e3a8a; }
+  .manual-install {
+    margin-top: 28px; padding-top: 22px;
+    border-top: 1px dashed #d3dbe6;
+  }
+  .manual-install h4 { margin: 0 0 6px; font-size: 16px; font-weight: 800; }
+  .manual-install > p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
 
   /* ── Domains browser ── */
   .domains-box {
@@ -616,15 +622,15 @@
           <p class="tagline lang-he">תוסף Chrome שמזהה כל חסימת סינון ברגע שהיא קורית, מסביר את סוג החסימה בשפה ברורה — ומקצר את הדרך לפתיחת בקשת בדיקה, עם כל הפרטים כבר ממולאים.</p>
           <p class="tagline lang-en hidden">A Chrome extension that detects every filter block the moment it happens, explains the block type in plain language — and shortens the path to a review request, with every field pre-filled.</p>
           <div class="hero-cta">
-            <a class="btn btn-primary" id="storeBtn" href="https://chromewebstore.google.com/detail/netfree-inspector/enapmclemkjcnffgekeknfjcgommamfj" target="_blank" rel="noopener">
+            <a class="btn btn-primary" id="storeBtn" href="https://chromewebstore.google.com/detail/block-inspector-for-netfr/enapmclemkjcnffgekeknfjcgommamfj" target="_blank" rel="noopener">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
               <span class="lang-he">התקן מחנות Chrome</span>
               <span class="lang-en hidden">Install from Chrome Web Store</span>
             </a>
-            <a class="btn btn-secondary" href="#beta">
+            <a class="btn btn-secondary" href="#manual">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              <span class="lang-he">הורד גרסה אחרונה</span>
-              <span class="lang-en hidden">Download latest</span>
+              <span class="lang-he">התקנה ידנית (ZIP)</span>
+              <span class="lang-en hidden">Manual install (ZIP)</span>
             </a>
           </div>
           <div class="hero-meta">
@@ -727,25 +733,20 @@
       </div>
     </section>
 
-    <!-- ══ Install / latest version ══ -->
+    <!-- ══ Install ══ -->
     <section id="beta" class="reveal">
       <span class="eyebrow lang-he">התקנה</span>
       <span class="eyebrow lang-en hidden">Install</span>
-      <h2 class="lang-he">קבל את הגרסה החדשה עכשיו</h2>
-      <h2 class="lang-en hidden">Get the newest version early</h2>
+      <h2 class="lang-he">הגרסה האחרונה — עכשיו בחנות Chrome</h2>
+      <h2 class="lang-en hidden">The latest version — now on the Chrome Web Store</h2>
       <div class="install-card">
         <div class="install-head">
           <span class="version-badge">v1.9.1</span>
-          <h3 class="lang-he">התקנה ידנית של הגרסה האחרונה</h3>
-          <h3 class="lang-en hidden">Manual install of the latest build</h3>
+          <h3 class="lang-he">התקנה מחנות Chrome (מומלץ)</h3>
+          <h3 class="lang-en hidden">Install from the Chrome Web Store (recommended)</h3>
         </div>
-        <p class="install-intro lang-he"><b>גרסה 1.9.1.</b> הגרסה בחנות Chrome מתעדכנת לפי לוח הבדיקה של Google. רוצה כבר עכשיו את הגרסה האחרונה? התקן אותה ידנית:</p>
-        <p class="install-intro lang-en hidden"><b>Version 1.9.1.</b> The Chrome Web Store copy updates on Google's review schedule. Want the newest build right now? Install it manually:</p>
-        <ol class="install-steps">
-          <li><span><span class="lang-he">הורד את קובץ ה-ZIP למטה וחלץ אותו.</span><span class="lang-en hidden">Download the ZIP below and unzip it.</span></span></li>
-          <li><span><span class="lang-he">פתח <code>chrome://extensions</code> והפעל <b>מצב מפתח</b> (Developer mode) בפינה העליונה.</span><span class="lang-en hidden">Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</span></span></li>
-          <li><span><span class="lang-he">לחץ <b>טען לא ארוז</b> (Load unpacked) ובחר את התיקייה שחילצת — זו שמכילה את <code>manifest.json</code>.</span><span class="lang-en hidden">Click <b>Load unpacked</b> and select the unzipped folder — the one containing <code>manifest.json</code>.</span></span></li>
-        </ol>
+        <p class="install-intro lang-he"><b>גרסה 1.9.1</b>, הגרסה האחרונה, זמינה בחנות Chrome. התקנה בלחיצה אחת — וכל עדכון עתידי מגיע אוטומטית, בלי להוריד שום דבר ידנית.</p>
+        <p class="install-intro lang-en hidden"><b>Version 1.9.1</b>, the latest, is live on the Chrome Web Store. One-click install — and every future update arrives automatically, with nothing to download by hand.</p>
         <div class="whats-new">
           <span aria-hidden="true">🔄</span>
           <span>
@@ -753,15 +754,27 @@
             <span class="lang-en hidden">New in 1.9.1: recordings now <b>empty the cache and reload the page</b> — so every resource is re-fetched over the network and captured in the traffic recording. NetFree gets a complete, accurate picture, with nothing silently served from local cache — no need to open a "guest window" or clear the cache by hand.</span>
           </span>
         </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;">
-          <a class="btn btn-primary" href="https://github.com/mfvirtualmail-bot/netfree-inspector/releases/latest/download/netfree-inspector.zip">
+        <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/block-inspector-for-netfr/enapmclemkjcnffgekeknfjcgommamfj" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
+          <span class="lang-he">התקן מחנות Chrome</span>
+          <span class="lang-en hidden">Install from Chrome Web Store</span>
+        </a>
+
+        <!-- Manual (unpacked) install — for anyone who can't use the store -->
+        <div class="manual-install" id="manual">
+          <h4 class="lang-he">התקנה ידנית (ZIP)</h4>
+          <h4 class="lang-en hidden">Manual install (ZIP)</h4>
+          <p class="lang-he">למי שאין אפשרות להתקין מהחנות. שים לב: עותק שהותקן ידנית אינו מתעדכן מעצמו — אם התקנת בעבר את ה-ZIP, מומלץ להסיר אותו ב-<code>chrome://extensions</code> ולהתקין מהחנות.</p>
+          <p class="lang-en hidden">For when installing from the store isn't possible. Note: a manually installed copy doesn't update itself — if you installed the ZIP earlier, remove it at <code>chrome://extensions</code> and install from the store instead.</p>
+          <ol class="install-steps">
+            <li><span><span class="lang-he">הורד את קובץ ה-ZIP למטה וחלץ אותו.</span><span class="lang-en hidden">Download the ZIP below and unzip it.</span></span></li>
+            <li><span><span class="lang-he">פתח <code>chrome://extensions</code> והפעל <b>מצב מפתח</b> (Developer mode) בפינה העליונה.</span><span class="lang-en hidden">Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</span></span></li>
+            <li><span><span class="lang-he">לחץ <b>טען לא ארוז</b> (Load unpacked) ובחר את התיקייה שחילצת — זו שמכילה את <code>manifest.json</code>.</span><span class="lang-en hidden">Click <b>Load unpacked</b> and select the unzipped folder — the one containing <code>manifest.json</code>.</span></span></li>
+          </ol>
+          <a class="btn btn-secondary" href="https://github.com/mfvirtualmail-bot/netfree-inspector/releases/latest/download/netfree-inspector.zip">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span class="lang-he">הורד את הגרסה האחרונה (ZIP)</span>
-            <span class="lang-en hidden">Download the latest version (ZIP)</span>
-          </a>
-          <a class="btn btn-secondary" href="https://chromewebstore.google.com/detail/netfree-inspector/enapmclemkjcnffgekeknfjcgommamfj" target="_blank" rel="noopener">
-            <span class="lang-he">או התקן מחנות Chrome</span>
-            <span class="lang-en hidden">Or install from the Chrome Web Store</span>
+            <span class="lang-he">הורד קובץ ZIP</span>
+            <span class="lang-en hidden">Download the ZIP</span>
           </a>
         </div>
       </div>
@@ -847,15 +860,6 @@
           <h3 class="lang-en hidden">Shareable report</h3>
           <p class="lang-he">לחץ על אייקון הדוח כדי להעתיק סיכום קריא של כל החסימות בדף — מקובץ לפי סוג, עם תאריך וכותרת. מצוין לשליחה בוואטסאפ, מייל או הודעה.</p>
           <p class="lang-en hidden">Click the report icon to copy a human-readable summary of every block on the page — grouped by type, with date and header. Great for WhatsApp, email, or a quick message.</p>
-        </div>
-        <div class="feature">
-          <span class="feature-icon fi-purple" aria-hidden="true">
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          </span>
-          <h3 class="lang-he">רשימה אישית בהגדרות</h3>
-          <h3 class="lang-en hidden">Personal allowlist</h3>
-          <p class="lang-he">דף ההגדרות מאפשר להוסיף דומיינים משלך לרשימת ה"מותרים" — חסימות שלהם יוסתרו רק אצלך, מבלי להשפיע על משתמשים אחרים.</p>
-          <p class="lang-en hidden">The options page lets you add your own domains to the "ignore" list — their blocks are hidden only for you, without affecting other users.</p>
         </div>
         <div class="feature">
           <span class="feature-icon fi-rose" aria-hidden="true">
@@ -975,8 +979,9 @@
           <label for="cfMsg"><span class="lang-he">ההודעה</span><span class="lang-en hidden">Your message</span></label>
           <textarea id="cfMsg" name="message" required data-ph-he="מה רצית לספר לנו?" data-ph-en="What would you like to tell us?"></textarea>
         </div>
-        <!-- honeypot — bots fill it, people never see it -->
-        <input type="text" name="_honey" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;top:-9999px;" aria-hidden="true" />
+        <!-- honeypot — bots fill it, people never see it. Clipped to 1px in place rather than
+             pushed off-screen: a -9999px offset made the Hebrew (RTL) page scroll sideways. -->
+        <input type="text" name="_honey" tabindex="-1" autocomplete="off" style="position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);opacity:0;pointer-events:none;" aria-hidden="true" />
         <div class="contact-foot">
           <button class="btn btn-primary" id="cfSend" type="submit">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -1044,7 +1049,7 @@
         <p class="lang-he">התקנה בלחיצה אחת. חינם, קוד פתוח, בלי מעקב — והשפה כבר מותאמת אליכם.</p>
         <p class="lang-en hidden">One-click install. Free, open source, no tracking — and already in your language.</p>
       </div>
-      <a class="btn btn-white" href="https://chromewebstore.google.com/detail/netfree-inspector/enapmclemkjcnffgekeknfjcgommamfj" target="_blank" rel="noopener">
+      <a class="btn btn-white" href="https://chromewebstore.google.com/detail/block-inspector-for-netfr/enapmclemkjcnffgekeknfjcgommamfj" target="_blank" rel="noopener">
         <span class="lang-he">התקן ל-Chrome</span>
         <span class="lang-en hidden">Install for Chrome</span>
       </a>
