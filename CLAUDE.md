@@ -66,6 +66,27 @@ NetFree is a whitelist-based content filter. When it blocks a resource it return
 - `options.html` / `options.js` is a separate preferences page opened via the manifest
   `options_ui` field
 
+### Recordings (what NetFree support receives)
+
+The real recordings are NetFree's OWN live traffic stream (SSE), captured while the
+user demonstrates and uploaded verbatim — the stream sees the user's network
+traffic, whichever window or program it comes from.
+
+- **Traffic recording** ("Open request" / "Send for review"): background.js
+  `startInteractiveTrafficRecord` — stream on, hard-reload the tab, Stop pill
+  (`traffic-overlay.js`), upload + pre-filled ticket on Stop / tab close / 2-min cap.
+- **Record in Incognito** (popup toolbar): same, but `clean: true` opens the page in
+  a new Incognito window instead of reloading — the "guest window" NetFree asks
+  for. Without "Allow in Incognito" the extension can't see that window
+  (`windows.create` returns null, no events), so the Stop pill stays on the
+  original tab; with it, closing the window stops + sends. Incognito disabled by
+  policy → `windows.create` throws → recording discarded, popup shows why.
+- **Screen recording**: `recorder.html/js` window + `rec-overlay.js` pill.
+- While any recording is `'recording'`, DNR rule 9103 keeps the browser cache off
+  (`syncCacheOff`). Requests another extension blocks (`net::ERR_BLOCKED_BY_CLIENT`)
+  never reach NetFree; they are counted (`countClientBlocked`), shown on the pill,
+  and noted in the ticket.
+
 ### Block type classification
 
 | Type | Signal (in response URL) | Badge color |

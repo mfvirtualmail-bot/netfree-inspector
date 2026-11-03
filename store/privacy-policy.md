@@ -14,11 +14,11 @@ NetFree Inspector shows you which requests on a page were blocked by the NetFree
 
 ### 1. What the extension does
 
-NetFree Inspector detects HTTP 418 responses — NetFree's block signal ([https://netfree.link](https://netfree.link)) — on the current tab and lists the blocked URLs, their type, and NetFree's block reason. Optionally, it helps you file a review request to NetFree for a blocked site, file, or video — including, at your choice, a recording of your recent network traffic and/or a screen recording — so NetFree can review and approve it.
+NetFree Inspector detects HTTP 418 responses — NetFree's block signal ([https://netfree.link](https://netfree.link)) — on the current tab and lists the blocked URLs, their type, and NetFree's block reason. Optionally, it helps you file a review request to NetFree for a blocked site, file, or video — including, at your choice, a recording of your recent network traffic (optionally made in a new Incognito window, like the "guest window" NetFree may ask for) and/or a screen recording — so NetFree can review and approve it.
 
 ### 2. Permissions the extension uses
 
-- **`webRequest`** — observe HTTP responses to detect 418 blocks.
+- **`webRequest`** — observe HTTP responses to detect 418 blocks; while a recording you started is running, also notice requests another extension blocked, so it can tell you they are missing from the recording.
 - **`tabs`** — associate blocks with the correct tab, and open NetFree's request form.
 - **`storage`** — hold block data locally between the background worker and the popup, and remember your language.
 - **`webNavigation`** — detect navigation so stale block data can be cleared.
@@ -36,6 +36,7 @@ NetFree Inspector detects HTTP 418 responses — NetFree's block signal ([https:
 - NetFree's block reason code (read from the 418 response)
 - The domain/URL of the current tab (shown in the popup and used to pre-fill a request)
 - Your language preference (stored in `chrome.storage.local`)
+- During a recording: how many requests another extension blocked (a count only)
 
 Detection data is held in transient session storage and cleared when you close the browser or navigate away.
 
@@ -45,7 +46,7 @@ To read NetFree's block reason, the extension may re-request a blocked URL so it
 
 **NetFree Inspector never uploads anything on its own.** When you explicitly choose to file a review request, and only then, it sends the following to **NetFree** (`netfree.link` — the content-filter provider you already use), using your existing NetFree session:
 
-1. **The blocked link(s), the page URL you were on, and the description** shown in the request form.
+1. **The blocked link(s), the page URL you were on, and the description** shown in the request form — including a short note on how the recording was made (cache off, or in Incognito) and, if any, how many requests another extension blocked.
 2. **A "traffic recording"** — a list of your recent network requests as seen by NetFree's own filter, captured from NetFree's live traffic stream. This is the same information NetFree's own "record traffic" request tool collects; the extension simply builds it for you. (Uploaded to `netfree.link/api/user/save-traffic-record`.)
 3. **A screen recording** — *only if you start one* — of the screen area you choose. (Uploaded to `netfree.link/api/upload-file`, marked private.)
 
@@ -87,11 +88,11 @@ NetFree Inspector מראה לך אילו בקשות בדף נחסמו על יד�
 
 ### 1. מה ההרחבה עושה
 
-NetFree Inspector מזהה תגובות HTTP 418 — אות החסימה של נט פרי — בטאב הנוכחי, ומציגה את הכתובות החסומות, סוגן וסיבת החסימה. אופציונלית, היא עוזרת לך לשלוח לנט פרי בקשת בדיקה עבור אתר, קובץ או סרטון חסום — כולל, לפי בחירתך, הקלטה של התעבורה האחרונה שלך ו/או הקלטת מסך — כדי שנט פרי תוכל לבדוק ולאשר.
+NetFree Inspector מזהה תגובות HTTP 418 — אות החסימה של נט פרי — בטאב הנוכחי, ומציגה את הכתובות החסומות, סוגן וסיבת החסימה. אופציונלית, היא עוזרת לך לשלוח לנט פרי בקשת בדיקה עבור אתר, קובץ או סרטון חסום — כולל, לפי בחירתך, הקלטה של התעבורה האחרונה שלך (אפשר גם בחלון גלישה בסתר חדש, כמו "חלון אורח" שנט פרי עשויה לבקש) ו/או הקלטת מסך — כדי שנט פרי תוכל לבדוק ולאשר.
 
 ### 2. הרשאות שההרחבה משתמשת בהן
 
-- **`webRequest`** — לצפות בתגובות HTTP כדי לזהות חסימות 418.
+- **`webRequest`** — לצפות בתגובות HTTP כדי לזהות חסימות 418; בזמן הקלטה שהתחלת — גם לזהות בקשות שתוסף אחר חסם, כדי להודיע לך שהן חסרות בהקלטה.
 - **`tabs`** — לשייך חסימות לטאב הנכון ולפתוח את טופס הבקשה של נט פרי.
 - **`storage`** — לשמור נתוני חסימה מקומית בין רכיב הרקע לפופאפ, ולזכור את שפתך.
 - **`webNavigation`** — לזהות ניווט כדי לנקות נתונים ישנים.
@@ -109,6 +110,7 @@ NetFree Inspector מזהה תגובות HTTP 418 — אות החסימה של נ
 - קוד סיבת החסימה של נט פרי (נקרא מתגובת ה-418)
 - הדומיין/הכתובת של הטאב הנוכחי (מוצג בפופאפ ומשמש למילוי הבקשה)
 - העדפת השפה שלך (נשמרת ב-`chrome.storage.local`)
+- בזמן הקלטה: מספר הבקשות שתוסף אחר חסם (מספר בלבד)
 
 נתוני הזיהוי נשמרים בזיכרון זמני ונמחקים עם סגירת הדפדפן או מעבר לדף אחר.
 
@@ -118,7 +120,7 @@ NetFree Inspector מזהה תגובות HTTP 418 — אות החסימה של נ
 
 **ההרחבה לעולם אינה מעלה דבר מעצמה.** כאשר אתה בוחר במפורש לשלוח בקשת בדיקה, ורק אז, היא שולחת ל**נט פרי** (`netfree.link` — ספק הסינון שכבר בשימושך), באמצעות החיבור הקיים שלך לנט פרי:
 
-1. **הקישור/ים החסומים, כתובת הדף שבו היית, והתיאור** המופיע בטופס הבקשה.
+1. **הקישור/ים החסומים, כתובת הדף שבו היית, והתיאור** המופיע בטופס הבקשה — כולל הערה קצרה על אופן ההקלטה (מטמון כבוי, או בגלישה בסתר) ואם היו, מספר הבקשות שתוסף אחר חסם.
 2. **"הקלטת תעבורה"** — רשימת הבקשות האחרונות שלך כפי שנראות על ידי הפילטר של נט פרי, שנלכדה משידור התעבורה החי של נט פרי. זהו אותו מידע שכלי "הקלטת התעבורה" של נט פרי אוסף; ההרחבה פשוט בונה אותו עבורך. (מועלה ל-`netfree.link/api/user/save-traffic-record`.)
 3. **הקלטת מסך** — *רק אם תתחיל אחת* — של אזור המסך שתבחר. (מועלה ל-`netfree.link/api/upload-file`, מסומן כפרטי.)
 

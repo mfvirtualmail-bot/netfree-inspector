@@ -4,7 +4,10 @@
 // (click a button, play the video they're reporting) with a visible, always-on-
 // top way to stop — the popup closes the instant they click the page. This
 // content script shows a small draggable pill on the recording tab:
-//   recording → red pill with a live timer + "Stop & send" button
+//   recording → red pill with a live timer + "Stop & send" button; a second
+//               line warns when another extension blocked requests, or — for
+//               "Record in Incognito", on the original tab — says to close the
+//               Incognito window when done and stop here
 //   uploading → amber pill ("Uploading recording…")
 //   finished  → green/red flash with the outcome, then disappears
 //
@@ -25,6 +28,10 @@
   const T = {
     he: {
       recording: 'מקליט תעבורה',
+      recordingClean: 'מקליט את חלון הגלישה בסתר',
+      cleanHint: 'בסיום סגרו את חלון הגלישה בסתר ולחצו כאן',
+      blocked:   (n) => n === 1 ? '⚠ תוסף אחר חסם בקשה אחת — היא לא תופיע בהקלטה' : `⚠ תוסף אחר חסם ${n} בקשות — הן לא יופיעו בהקלטה`,
+      blockedHint: 'בקשות שתוסף אחר (למשל חוסם פרסומות) חוסם בתוך הדפדפן לא מגיעות לנט פרי, ולכן אינן בהקלטה. כדי לכלול אותן, השביתו את התוסף לאתר זה, או הקליטו בגלישה בסתר.',
       hint:      'השתמשו בדף כרגיל, ואז לחצו',
       stop:      'עצור ושלח בקשה',
       uploading: 'מעלה הקלטה…',
@@ -34,6 +41,10 @@
     },
     en: {
       recording: 'Recording traffic',
+      recordingClean: 'Recording the Incognito window',
+      cleanHint: 'When done, close the Incognito window and click here',
+      blocked:   (n) => n === 1 ? '⚠ Another extension blocked 1 request — it won\'t be in the recording' : `⚠ Another extension blocked ${n} requests — they won't be in the recording`,
+      blockedHint: 'Requests another extension (such as an ad blocker) blocks inside the browser never reach NetFree, so they can\'t be in the recording. To include them, turn that extension off for this site, or record in Incognito.',
       hint:      'Use the page normally, then click',
       stop:      'Stop & send request',
       uploading: 'Uploading recording…',
@@ -50,12 +61,17 @@
   let pill       = null;
   let dotEl      = null;
   let textEl     = null;
+  let subEl      = null;   // optional second line (warning / Incognito hint)
   let stopBtn    = null;
   let tickTimer  = null;
   let hideTimer  = null;
   let pulseTimer = null;
   let shownResultTs = 0;
   let savedPos   = null;
+  let blockedN   = 0;      // requests another extension blocked (trafficRecBlocked)
+  // This pill can also run in the Incognito window itself (only when the
+  // extension is allowed there) — there it's a plain recording pill.
+  const inIncognito = !!(chrome.extension && chrome.extension.inIncognitoContext);
 
   function fmtElapsed(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -94,6 +110,12 @@
     css(dotEl, { width: '13px', height: '13px', borderRadius: '50%', background: '#FFFFFF', flexShrink: '0' });
 
     textEl = document.createElement('span');
+    subEl = document.createElement('span');
+    css(subEl, { display: 'none', alignSelf: 'flex-start', font: '600 12px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif',
+      padding: '3px 8px', borderRadius: '6px' });
+    const lines = document.createElement('span');
+    css(lines, { display: 'flex', flexDirection: 'column', gap: '5px' });
+    lines.append(textEl, subEl);
 
     stopBtn = document.createElement('button');
     stopBtn.type = 'button';
@@ -113,7 +135,7 @@
       try { chrome.runtime.sendMessage({ type: 'TRAFFIC_RECORD_STOP' }); } catch { /* extension reloaded */ }
     });
 
-    pill.append(dotEl, textEl, stopBtn);
+    pill.append(dotEl, lines, stopBtn);
     shadow.appendChild(pill);
     (document.body || document.documentElement).appendChild(hostEl);
 
@@ -132,7 +154,7 @@
     if (tickTimer)  { clearInterval(tickTimer);  tickTimer  = null; }
     if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
     if (hideTimer)  { clearTimeout(hideTimer);   hideTimer  = null; }
-    if (hostEl) { hostEl.remove(); hostEl = null; pill = null; dotEl = null; textEl = null; stopBtn = null; }
+    if (hostEl) { hostEl.remove(); hostEl = null; pill = null; dotEl = null; textEl = null; subEl = null; stopBtn = null; }
   }
 
   function applyPosition() {
@@ -183,6 +205,25 @@
     window.addEventListener('resize', applyPosition);
   }
 
+  // The second line: amber = warning, translucent = hint, null = hidden. The
+  // pill changes size with it (and the count), so re-fit it into the viewport.
+  function setSub(text, kind, tip) {
+    if (!subEl) return;
+    const before = subEl.style.display === 'none' ? '' : subEl.textContent;
+    if (!text) {
+      subEl.style.display = 'none';
+      css(pill, { borderRadius: '999px' });
+    } else {
+      subEl.textContent = text;
+      subEl.title = tip || '';
+      css(subEl, kind === 'warn'
+        ? { display: 'block', background: '#FEF3C7', color: '#92400E' }
+        : { display: 'block', background: 'rgba(255,255,255,.18)', color: '#FFFFFF' });
+      css(pill, { borderRadius: '20px' });
+    }
+    if (before !== (text || '')) applyPosition();
+  }
+
   function render(state, result) {
     const t = T[lang];
     const status = state && state.status;
@@ -194,8 +235,15 @@
       stopBtn.style.display = '';
       stopBtn.disabled = false;
       stopBtn.textContent = t.stop;
+      // In Incognito the demonstration happens elsewhere: this (original) tab
+      // only holds the Stop button.
+      const clean = !!state.clean && !inIncognito;
+      if (clean)             setSub(t.cleanHint, 'hint');
+      else if (blockedN > 0) setSub(t.blocked(blockedN), 'warn', t.blockedHint);
+      else                   setSub(null);
+      const label = clean ? t.recordingClean : t.recording;
       const startedAt = state.startedAt || Date.now();
-      const tick = () => { if (textEl) textEl.textContent = `${t.recording} · ${fmtElapsed(Date.now() - startedAt)}`; };
+      const tick = () => { if (textEl) textEl.textContent = `${label} · ${fmtElapsed(Date.now() - startedAt)}`; };
       tick();
       if (tickTimer) clearInterval(tickTimer);
       tickTimer = setInterval(tick, 1000);
@@ -208,6 +256,7 @@
       if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
       css(pill, { background: '#B45309' });
       stopBtn.style.display = 'none';
+      setSub(null);
       textEl.textContent = t.uploading;
       return;
     }
@@ -218,6 +267,7 @@
       ensurePill();
       if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
       stopBtn.style.display = 'none';
+      setSub(null);
       if (result.ok) { css(pill, { background: '#15803D' }); textEl.textContent = t.done; }
       else {
         css(pill, { background: '#7F1D1D' });
@@ -233,9 +283,10 @@
 
   async function refresh() {
     let r;
-    try { r = await chrome.storage.local.get(['trafficRec', 'trafficRecResult', 'trafficRecOverlayPos', 'lang']); }
+    try { r = await chrome.storage.local.get(['trafficRec', 'trafficRecResult', 'trafficRecOverlayPos', 'trafficRecBlocked', 'lang']); }
     catch { return; }
     if (r.lang === 'he' || r.lang === 'en') lang = r.lang;
+    blockedN = r.trafficRecBlocked || 0;
     if (r.trafficRecOverlayPos) savedPos = r.trafficRecOverlayPos;
     if (r.trafficRecResult && r.trafficRecResult.ts && (Date.now() - r.trafficRecResult.ts) > 30000) {
       shownResultTs = r.trafficRecResult.ts;
@@ -246,7 +297,7 @@
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (changes.trafficRec || changes.trafficRecResult || changes.lang) refresh();
+      if (changes.trafficRec || changes.trafficRecResult || changes.trafficRecBlocked || changes.lang) refresh();
       if (changes.trafficRecOverlayPos && changes.trafficRecOverlayPos.newValue) {
         savedPos = changes.trafficRecOverlayPos.newValue;
       }

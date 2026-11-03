@@ -79,6 +79,15 @@ const T = {
     videoFailedNote:   'הערה: העלאת סרטון הקלטת המסך נכשלה.',
     trafficFailedNote: 'הערה: העלאת הקלטת התעבורה נכשלה.',
     cacheNote:         'המטמון (cache) של הדפדפן היה כבוי לאורך כל ההקלטה, כך שהתוכן נטען מהרשת ולא מהמטמון.',
+    // {n} = count; filled in by the worker when the recording ends.
+    clientBlockedNote: {
+      one:   'הערה: תוסף אחר בדפדפן (למשל חוסם פרסומות) חסם בזמן ההקלטה בקשה אחת לפני שהגיעה לרשת — נט פרי לא קיבלה אותה, ולכן היא אינה בהקלטה.',
+      other: 'הערה: תוסף אחר בדפדפן (למשל חוסם פרסומות) חסם בזמן ההקלטה {n} בקשות לפני שהגיעו לרשת — נט פרי לא קיבלה אותן, ולכן הן אינן בהקלטה.',
+    },
+    cleanNote:         'ההקלטה בוצעה בחלון גלישה בסתר (Incognito) חדש, כמו חלון אורח: בלי עוגיות ומטמון מהגלישה הרגילה, ותוספים אחרים כבויים בו אלא אם הותרו.',
+    cleanRecTitle:     'פותח את הדף בחלון גלישה בסתר חדש ומקליט אותו — בלי עוגיות, בלי תוספים אחרים ובלי מטמון, כמו "חלון אורח" שנט פרי מבקשת. בסיום סוגרים את החלון ולוחצים "עצור ושלח בקשה" בדף הזה.',
+    cleanOpening:      'פותח חלון…',
+    cleanUnavailable:  'חלונות גלישה בסתר חסומים במחשב זה',
     recBusy:           'הקלטה כבר פעילה',
     screenTicketSubject: (host) => `בקשה עם הקלטת מסך - ${host}`,
     screenTicketIntro:   (host) => `שלום,\nמצורפת הקלטת מסך שמדגימה את הבעיה שאני נתקל בה${host ? ` באתר ${host}` : ''}. אבקש לבדוק ולאשר. תודה רבה.`,
@@ -158,6 +167,15 @@ const T = {
     videoFailedNote:   'Note: the screen-recording video failed to upload.',
     trafficFailedNote: 'Note: the traffic recording failed to upload.',
     cacheNote:         'The browser cache was off for the whole recording, so content was loaded from the network, not from the cache.',
+    // {n} = count; filled in by the worker when the recording ends.
+    clientBlockedNote: {
+      one:   'Note: another browser extension (such as an ad blocker) blocked 1 request during the recording before it reached the network — NetFree never received it, so it is not in the recording.',
+      other: 'Note: another browser extension (such as an ad blocker) blocked {n} requests during the recording before they reached the network — NetFree never received them, so they are not in the recording.',
+    },
+    cleanNote:         'Recorded in a new Incognito window, like a guest window: no cookies or cache from normal browsing, and other extensions are off there unless allowed.',
+    cleanRecTitle:     'Opens this page in a new Incognito window and records it — no cookies, other extensions or cache, like the "guest window" NetFree asks for. When you\'re done, close that window and click "Stop & send request" on this page.',
+    cleanOpening:      'Opening window…',
+    cleanUnavailable:  'Incognito windows are turned off on this computer',
     recBusy:           'A recording is already in progress',
     screenTicketSubject: (host) => `Screen recording request — ${host}`,
     screenTicketIntro:   (host) => `Hello,\nAttached is a screen recording showing the problem I'm experiencing${host ? ` on ${host}` : ''}. Please review and approve. Thank you.`,
@@ -306,6 +324,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (srEls.btn)  srEls.btn.addEventListener('click', startScreenRec);
   if (srEls.stop) srEls.stop.addEventListener('click', stopScreenRec);
   if (srEls.cancel) srEls.cancel.addEventListener('click', cancelScreenRec);
+  document.getElementById('cleanRecBtn')?.addEventListener('click', startCleanRec);
+  syncCleanRecBtn();
   await refreshScreenRecUI();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
@@ -914,6 +934,7 @@ function applyLang(newLang, doRender = true) {
   // The screen-rec banner's title is dynamic (recording/uploading), so the
   // data-he/data-en pass above doesn't cover it — refresh from current state.
   if (typeof refreshScreenRecUI === 'function') refreshScreenRecUI();
+  syncCleanRecBtn();
 
   chrome.storage.local.set({ lang });
   if (doRender) render();
@@ -963,9 +984,52 @@ async function startTrafficRecordAndClose(focusGroup, ticketUrl) {
   try {
     await chrome.runtime.sendMessage({
       type: 'START_TRAFFIC_RECORD', tabId,
-      ticket: { subject, body, ticketUrl, trafficLabel, cacheNote: T[lang].cacheNote },
+      ticket: { subject, body, ticketUrl, trafficLabel, cacheNote: T[lang].cacheNote, clientBlockedNote: T[lang].clientBlockedNote },
     });
   } catch { /* SW asleep/closing — worst case the recording doesn't start */ }
+  window.close();
+}
+
+// "Record in Incognito": the worker starts the recording and opens this page in
+// a new Incognito window — the clean "guest window" NetFree asks for (no
+// cookies, other extensions or cache). The popup waits for the answer only to
+// explain a refusal (Incognito turned off by a policy, a recording already
+// running); on success the new window takes focus and this popup closes.
+let screenRecBusy = false;   // a screen recording is running — it already records everything
+function syncCleanRecBtn() {
+  const btn = document.getElementById('cleanRecBtn');
+  if (!btn) return;
+  btn.style.display = /^https?:/i.test(tabUrl) && !screenRecBusy ? '' : 'none';
+  btn.title = T[lang].cleanRecTitle;
+  btn.setAttribute('aria-label', btn.title);
+}
+
+async function startCleanRec() {
+  const t     = T[lang];
+  const btn   = document.getElementById('cleanRecBtn');
+  const label = document.getElementById('cleanRecLabel');
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = t.cleanOpening;
+  // List the page's blocks only if there are any (a calm page has none).
+  const listable = blocks.some(g => g.requests.some(r => showHarmless || !isMutedReq(r, g.blockType)));
+  const { subject, body } = buildTicketContent(listable, null);
+  let res = null;
+  try {
+    res = await chrome.runtime.sendMessage({
+      type: 'START_TRAFFIC_RECORD', tabId, clean: true, url: tabUrl,
+      ticket: {
+        subject, body, ticketUrl: makeTicketUrl(tabUrl, tabUrl, 'site'),
+        trafficLabel: lang === 'he' ? 'הקלטת תעבורה' : 'Traffic recording',
+        cleanNote: t.cleanNote, clientBlockedNote: t.clientBlockedNote,
+      },
+    });
+  } catch { /* SW asleep/closing — nothing started */ }
+  if (res && !res.ok && (res.error === 'incognito-unavailable' || res.error === 'busy')) {
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = label.dataset[lang];
+    showToast(res.error === 'busy' ? t.recBusy : t.cleanUnavailable);
+    return;
+  }
   window.close();
 }
 
@@ -1049,6 +1113,7 @@ async function startScreenRec() {
     // recording captured alongside the video — localized here, used there.
     trafficLabel:      lang === 'he' ? 'הקלטת תעבורה' : 'Traffic recording',
     cacheNote:         t.cacheNote,
+    clientBlockedNote: t.clientBlockedNote,
     videoFailedNote:   t.videoFailedNote,
     trafficFailedNote: t.trafficFailedNote,
   };
@@ -1115,6 +1180,8 @@ function applyScreenRecState(state, result) {
   const status    = state && state.status;
   const recording = status === 'recording';
   const busy      = status === 'picking' || status === 'uploading';
+  screenRecBusy   = recording || busy;
+  syncCleanRecBtn();
 
   if (recording || busy) {
     els.btn.style.display = 'none';

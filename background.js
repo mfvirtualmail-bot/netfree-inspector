@@ -239,12 +239,20 @@ chrome.webRequest.onErrorOccurred.addListener(
       }
     }
 
+    const { requestId, url, tabId, error } = details;
+
+    // Cancelled inside the browser by another extension → missing from the
+    // recording; count it for the live recording's pill (see countClientBlocked).
+    if (error === 'net::ERR_BLOCKED_BY_CLIENT' && tabId >= 0 && !url.includes(NETFREE_HOST)) {
+      if (trTabId != null && !trFinalizing && (tabId === trTabId || tabId === trCleanTabId)) countClientBlocked('traffic');
+      if (grecSession) countClientBlocked('screen');
+    }
+
     // Failed with no status? Could be a NetFree 418 the browser refused to
     // surface (CORS-killed cross-origin block). Probe it from the SW —
     // independent of the onHeadersReceived tap, so a block is caught even
     // when that event is skipped. tracked418 says the other path already
     // confirmed this request; a probe would be a wasted fetch.
-    const { requestId, url, tabId, error } = details;
     if (tabId >= 0 && PROBE_ERRORS.has(error) && /^https?:/i.test(url) &&
         !url.includes(NETFREE_HOST) && !tracked418.has(requestId)) {
       probe418(url).then((p) => {
@@ -499,6 +507,41 @@ async function applyCacheOff() {
   } catch { /* the recording still gets the reload's one-time cache bypass */ }
 }
 
+// ── Requests another extension blocked during a recording ──────────────────
+// An ad blocker (or any extension that blocks requests) cancels them INSIDE the
+// browser: they fail with net::ERR_BLOCKED_BY_CLIENT and never reach the
+// network, so NetFree's recording can't contain them (verified with a blocking
+// test extension). Counted per recording kind, so its pill can warn the user
+// while there is still time to turn that extension off, and the request can say
+// so. In memory, mirrored to storage.local for the pills; the screen count is
+// re-read on startup because a screen recording survives a worker restart.
+const CLIENT_BLOCKED_KEY = { traffic: 'trafficRecBlocked', screen: 'screenRecBlocked' };
+const clientBlocked = { traffic: 0, screen: 0 };
+let clientBlockedTimer = null;
+function countClientBlocked(kind) {
+  clientBlocked[kind]++;
+  if (!clientBlockedTimer) clientBlockedTimer = setTimeout(flushClientBlocked, 500);
+}
+function flushClientBlocked() {
+  clientBlockedTimer = null;
+  chrome.storage.local.set({
+    [CLIENT_BLOCKED_KEY.traffic]: clientBlocked.traffic,
+    [CLIENT_BLOCKED_KEY.screen]:  clientBlocked.screen,
+  }).catch(() => { /* the pill just won't show the count */ });
+}
+function resetClientBlocked(kind) {
+  clientBlocked[kind] = 0;
+  chrome.storage.local.set({ [CLIENT_BLOCKED_KEY[kind]]: 0 }).catch(() => {});
+}
+chrome.storage.local.get(CLIENT_BLOCKED_KEY.screen)
+  .then((r) => { clientBlocked.screen += r[CLIENT_BLOCKED_KEY.screen] || 0; })
+  .catch(() => {});
+// The request's note: { one, other } templates from the popup ({n} = count).
+function clientBlockedLine(note, n) {
+  if (!note || !(n > 0)) return '';
+  return String(n === 1 ? note.one : note.other).replace('{n}', String(n));
+}
+
 // ── Interactive traffic recording (on-page pill, manual stop) ──────────────
 // The user often must USE the page while it records — click a control, press
 // play on the video they're reporting — so a fixed auto-capture window is
@@ -509,14 +552,30 @@ async function applyCacheOff() {
 // WORKER uploads the real recording and opens the pre-filled request form — the
 // popup is gone the instant the user clicks the page, so the pill is the
 // control, not the popup.
-const TR_STATE  = 'trafficRec';        // { status:'recording'|'uploading', startedAt, tabId }
+//
+// "Record in Incognito" (clean: true) is the same recording on a different
+// stage. NetFree support often asks to "open it in a guest window and record
+// again": a window with no cookies (a logged-out first visit), no other
+// extensions and no cache shows them what the site does for anyone. A new
+// Incognito window is exactly that, and NetFree's stream still records it — it
+// captures the user's traffic on the network, whichever window it comes from.
+// So instead of reloading the tab we open its page in a new Incognito window.
+// Without "Allow in Incognito" (the default) this extension can neither see nor
+// script that window — windows.create() returns null and no events arrive — so
+// the Stop pill stays on the ORIGINAL tab, telling the user to close the
+// Incognito window when done and press Stop there. With that access, closing
+// the Incognito window stops and sends by itself, and the pill shows in it too.
+const TR_STATE  = 'trafficRec';        // { status:'recording'|'uploading', startedAt, tabId, clean }
 const TR_RESULT = 'trafficRecResult';  // { ok, error?, ts }
 const TR_MAX_MS = 120000;              // 2-min safety cap if the user forgets to stop
+const TR_CLEAN_MAX_MS = 240000;        // 4 min in Incognito: no cookies there, the user may need to log in
 
 let trTabId      = null;               // tab of the active interactive recording
-let trTicket     = null;               // { subject, body, ticketUrl, trafficLabel }
+let trTicket     = null;               // { subject, body, ticketUrl, trafficLabel, …notes }
 let trCapTimer   = null;
 let trFinalizing = false;
+let trCleanWinId = null;               // the Incognito window — only known with Incognito access
+let trCleanTabId = null;               // its first tab (same condition)
 
 async function trSet(state) {
   try { if (state) await chrome.storage.local.set({ [TR_STATE]: state }); else await chrome.storage.local.remove(TR_STATE); }
@@ -575,26 +634,56 @@ async function injectTrafficOverlay(tabId) {
   catch { /* chrome:// / store / blocked page — pill just won't show; capture still runs */ }
 }
 
-async function startInteractiveTrafficRecord({ tabId, ticket }) {
+async function startInteractiveTrafficRecord({ tabId, ticket, clean, url }) {
   if (tabId == null)   return { ok: false, error: 'no-tab' };
   if (trTabId != null) return { ok: false, error: 'busy' };
+  if (clean && !/^https?:/i.test(url || '')) return { ok: false, error: 'bad-url' };
   // Don't reload + record into a logged-out session — send them to log in first.
   if (!(await isNetfreeLoggedIn())) { openNetfreeLogin(); return { ok: false, error: 'not-logged-in' }; }
   trTabId = tabId; trTicket = ticket || null; trFinalizing = false;
+  resetClientBlocked('traffic');
   await rtStartCapture();
   await new Promise((r) => setTimeout(r, 400));      // let the stream connect first
   // Tab closed meanwhile → onRemoved already finished this recording; don't
   // re-flag it 'recording' (nothing would ever clear it, nor turn the cache on).
   if (trTabId !== tabId || trFinalizing) return { ok: false, error: 'no-tab' };
-  await trSet({ status: 'recording', startedAt: Date.now(), tabId });
-  try { await chrome.tabs.reload(tabId, { bypassCache: true }); }
-  catch { stopInteractiveTrafficRecord('tab-closed'); return { ok: false, error: 'no-tab' }; }
-  // The onCompleted listener below (re)injects the pill once the page is ready;
-  // nudge it too in case that timing is missed.
-  setTimeout(() => injectTrafficOverlay(tabId), 1200);
+  await trSet({ status: 'recording', startedAt: Date.now(), tabId, clean: !!clean });
+  if (clean) {
+    let win;
+    try { win = await chrome.windows.create({ url, incognito: true, focused: true }); }
+    catch {
+      // Incognito is turned off on this computer (a policy) — nothing has been
+      // demonstrated yet, so drop the recording; the popup says why.
+      await discardInteractiveTrafficRecord();
+      return { ok: false, error: 'incognito-unavailable' };
+    }
+    if (trTabId !== tabId) return { ok: false, error: 'no-tab' };
+    if (win && win.id != null) {
+      trCleanWinId = win.id;
+      trCleanTabId = (win.tabs && win.tabs[0] && win.tabs[0].id) ?? null;
+    }
+    injectTrafficOverlay(tabId);
+  } else {
+    try { await chrome.tabs.reload(tabId, { bypassCache: true }); }
+    catch { stopInteractiveTrafficRecord('tab-closed'); return { ok: false, error: 'no-tab' }; }
+    // The onCompleted listener below (re)injects the pill once the page is ready;
+    // nudge it too in case that timing is missed.
+    setTimeout(() => injectTrafficOverlay(tabId), 1200);
+  }
   if (trCapTimer) clearTimeout(trCapTimer);
-  trCapTimer = setTimeout(() => { stopInteractiveTrafficRecord('cap'); }, TR_MAX_MS);
+  trCapTimer = setTimeout(() => { stopInteractiveTrafficRecord('cap'); }, clean ? TR_CLEAN_MAX_MS : TR_MAX_MS);
   return { ok: true };
+}
+
+// Drop a recording before anything was demonstrated: no upload, no request.
+async function discardInteractiveTrafficRecord() {
+  if (trFinalizing || trTabId == null) return;
+  trFinalizing = true;
+  if (trCapTimer) { clearTimeout(trCapTimer); trCapTimer = null; }
+  rtStopCapture();
+  await trSet(null);
+  rtCap = null;
+  trTabId = null; trTicket = null; trCleanWinId = null; trCleanTabId = null; trFinalizing = false;
 }
 
 async function stopInteractiveTrafficRecord(/* reason */) {
@@ -602,6 +691,7 @@ async function stopInteractiveTrafficRecord(/* reason */) {
   trFinalizing = true;
   if (trCapTimer) { clearTimeout(trCapTimer); trCapTimer = null; }
   const ticket = trTicket;
+  const blocked = clientBlocked.traffic;
   try {
     await trSet({ status: 'uploading', startedAt: Date.now(), tabId: trTabId });
     rtStopCapture();
@@ -612,7 +702,10 @@ async function stopInteractiveTrafficRecord(/* reason */) {
     if (res.ok && res.url) {
       const label = (ticket && ticket.trafficLabel) || 'הקלטת תעבורה';
       body = `${body}\n\n${label}: ${res.url}`;
-      if (ticket && ticket.cacheNote) body += `\n\n${ticket.cacheNote}`;
+      // How it was recorded (cache off / in Incognito) and what it can't contain.
+      const notes = [ticket && ticket.cacheNote, ticket && ticket.cleanNote,
+        clientBlockedLine(ticket && ticket.clientBlockedNote, blocked)];
+      for (const note of notes) if (note) body += `\n\n${note}`;
     }
     if (!res.ok && res.error === 'not-authenticated') {
       // Logged out of the netfree.link account — the recording is already lost
@@ -628,13 +721,20 @@ async function stopInteractiveTrafficRecord(/* reason */) {
   } finally {
     await trSet(null);
     rtCap = null;
-    trTabId = null; trTicket = null; trFinalizing = false;
+    trTabId = null; trTicket = null; trCleanWinId = null; trCleanTabId = null; trFinalizing = false;
   }
 }
 
-// Keep the on-page pill alive across in-tab navigation during a recording.
+// Keep the on-page pill alive across in-tab navigation during a recording
+// (the Incognito tab too, when the extension may see it).
 chrome.webNavigation.onCompleted.addListener((d) => {
-  if (trTabId != null && d.tabId === trTabId && d.frameId === 0) injectTrafficOverlay(d.tabId);
+  if (trTabId != null && d.frameId === 0 && (d.tabId === trTabId || d.tabId === trCleanTabId)) injectTrafficOverlay(d.tabId);
+});
+
+// Closing the Incognito window is "done" — stop and send. (Only reported to an
+// extension allowed in Incognito; otherwise the pill on the original tab stops it.)
+chrome.windows.onRemoved.addListener((winId) => {
+  if (trCleanWinId != null && winId === trCleanWinId) stopInteractiveTrafficRecord('clean-window-closed');
 });
 
 // ─────────────────────────────────────────────────────────
@@ -792,6 +892,7 @@ async function handleRecorderStarted() {
   // recording phase is guarded instead by window.onRemoved / beforeunload
   // (abort) and SW-restart reconciliation, none of which need this alarm.
   clearWatchdog();
+  resetClientBlocked('screen');
   await srSet({ ...st, status: 'recording', startedAt: Date.now() });
   await grecStart();
   await injectOverlayAllTabs();   // show the floating stop pill everywhere
@@ -1213,6 +1314,8 @@ async function finalizeScreenTicket(state, filekey, trafficUrl, trafficFailed) {
   if (trafficUrl) {
     parts.push(`${ticket.trafficLabel || 'Traffic recording'}: ${trafficUrl}`);
     if (ticket.cacheNote) parts.push(ticket.cacheNote);
+    const blockedLine = clientBlockedLine(ticket.clientBlockedNote, clientBlocked.screen);
+    if (blockedLine) parts.push(blockedLine);
   } else if (trafficFailed) parts.push(ticket.trafficFailedNote || 'Note: the traffic recording failed to upload.');
   const body = parts.join('\n\n');
   try {

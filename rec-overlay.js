@@ -4,7 +4,8 @@
 // way to stop it — the popup closes the moment the user clicks anywhere,
 // and Chrome's own "Stop sharing" bar can be dismissed ("Hide"). This
 // content script shows a small draggable pill on every http(s) page:
-//   recording → red pill with a live timer + "Stop & send" button
+//   recording → red pill with a live timer + "Stop & send" button (plus a
+//               warning line when another extension blocked requests)
 //   uploading → amber pill ("Uploading recording…")
 //   finished  → green/red flash with the outcome, then disappears
 //
@@ -41,6 +42,8 @@
       failed:    'העלאת ההקלטה נכשלה',
       notAuth:   'התחבר לנט פרי ונסה שוב',
       dragHint:  'אפשר לגרור את הכפתור לכל מקום',
+      blocked:   (n) => n === 1 ? '⚠ תוסף אחר חסם בקשה אחת — היא לא תופיע בהקלטת התעבורה' : `⚠ תוסף אחר חסם ${n} בקשות — הן לא יופיעו בהקלטת התעבורה`,
+      blockedHint: 'בקשות שתוסף אחר (למשל חוסם פרסומות) חוסם בתוך הדפדפן לא מגיעות לנט פרי, ולכן אינן בהקלטת התעבורה. כדי לכלול אותן, השביתו את התוסף לאתר זה.',
     },
     en: {
       recording: 'Recording screen',
@@ -51,6 +54,8 @@
       failed:    'Recording upload failed',
       notAuth:   'Log into NetFree, then record again',
       dragHint:  'Drag to move this button anywhere',
+      blocked:   (n) => n === 1 ? '⚠ Another extension blocked 1 request — it won\'t be in the traffic recording' : `⚠ Another extension blocked ${n} requests — they won't be in the traffic recording`,
+      blockedHint: 'Requests another extension (such as an ad blocker) blocks inside the browser never reach NetFree, so they can\'t be in the traffic recording. To include them, turn that extension off for this site.',
     },
   };
 
@@ -61,12 +66,14 @@
   let pill        = null;   // the pill element inside the shadow root
   let dotEl       = null;
   let textEl      = null;
+  let subEl       = null;   // warning line: another extension blocked requests
   let stopBtn     = null;
   let tickTimer   = null;
   let hideTimer   = null;
   let pulseTimer  = null;
   let shownResultTs = 0;    // result timestamps already flashed
   let savedPos    = null;   // { left, top } persisted across pages
+  let blockedN    = 0;      // requests another extension blocked (screenRecBlocked)
 
   function fmtElapsed(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -114,6 +121,12 @@
     });
 
     textEl = document.createElement('span');
+    subEl = document.createElement('span');
+    css(subEl, { display: 'none', alignSelf: 'flex-start', font: '600 11.5px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif',
+      padding: '3px 8px', borderRadius: '6px', background: '#FEF3C7', color: '#92400E' });
+    const lines = document.createElement('span');
+    css(lines, { display: 'flex', flexDirection: 'column', gap: '4px' });
+    lines.append(textEl, subEl);
 
     stopBtn = document.createElement('button');
     stopBtn.type = 'button';
@@ -133,7 +146,7 @@
       try { chrome.runtime.sendMessage({ type: 'SCREEN_RECORD_STOP' }); } catch { /* extension reloaded */ }
     });
 
-    pill.append(dotEl, textEl, stopBtn);
+    pill.append(dotEl, lines, stopBtn);
     shadow.appendChild(pill);
     (document.body || document.documentElement).appendChild(hostEl);
 
@@ -157,7 +170,7 @@
     if (tickTimer)  { clearInterval(tickTimer);  tickTimer  = null; }
     if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
     if (hideTimer)  { clearTimeout(hideTimer);   hideTimer  = null; }
-    if (hostEl) { hostEl.remove(); hostEl = null; pill = null; dotEl = null; textEl = null; stopBtn = null; }
+    if (hostEl) { hostEl.remove(); hostEl = null; pill = null; dotEl = null; textEl = null; subEl = null; stopBtn = null; }
   }
 
   // ── Position: default bottom-right, draggable anywhere, remembered ──
@@ -220,6 +233,18 @@
     window.addEventListener('resize', applyPosition);
   }
 
+  // The warning line (null = hidden). The pill changes size with it (and the
+  // count), so re-fit it into the viewport.
+  function setSub(text, tip) {
+    if (!subEl) return;
+    const before = subEl.style.display === 'none' ? '' : subEl.textContent;
+    subEl.textContent = text || '';
+    subEl.title = tip || '';
+    subEl.style.display = text ? 'block' : 'none';
+    css(pill, { borderRadius: text ? '18px' : '999px' });
+    if (before !== (text || '')) applyPosition();
+  }
+
   // ── State → pill rendering ──
   function render(state, result) {
     const t      = T[lang];
@@ -232,6 +257,7 @@
       stopBtn.style.display = '';
       stopBtn.disabled = false;
       stopBtn.textContent = t.stop;
+      setSub(blockedN > 0 ? t.blocked(blockedN) : null, t.blockedHint);
       const startedAt = state.startedAt || Date.now();
       const tick = () => { if (textEl) textEl.textContent = `${t.recording} · ${fmtElapsed(Date.now() - startedAt)}`; };
       tick();
@@ -246,6 +272,7 @@
       if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
       css(pill, { background: '#B45309' });
       stopBtn.style.display = 'none';
+      setSub(null);
       textEl.textContent = t.uploading;
       return;
     }
@@ -256,6 +283,7 @@
       ensurePill();
       if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
       stopBtn.style.display = 'none';
+      setSub(null);
       const code = result.error && result.error !== 'error' ? ` [${result.error}]` : '';
       if (result.ok) {
         css(pill, { background: '#15803D' });
@@ -279,9 +307,10 @@
   async function refresh() {
     let r;
     try {
-      r = await chrome.storage.local.get(['screenRec', 'screenRecResult', 'screenRecOverlayPos', 'lang']);
+      r = await chrome.storage.local.get(['screenRec', 'screenRecResult', 'screenRecOverlayPos', 'screenRecBlocked', 'lang']);
     } catch { return; /* extension context gone */ }
     if (r.lang === 'he' || r.lang === 'en') lang = r.lang;
+    blockedN = r.screenRecBlocked || 0;
     if (r.screenRecOverlayPos) savedPos = r.screenRecOverlayPos;
     // A result older than the freshness window is history, not news — mark
     // it shown so a page load days later doesn't flash it.
@@ -294,7 +323,7 @@
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (changes.screenRec || changes.screenRecResult || changes.lang) refresh();
+      if (changes.screenRec || changes.screenRecResult || changes.screenRecBlocked || changes.lang) refresh();
       if (changes.screenRecOverlayPos && changes.screenRecOverlayPos.newValue) {
         savedPos = changes.screenRecOverlayPos.newValue;   // moved on another tab
       }
