@@ -78,6 +78,7 @@ const T = {
     recNotLoggedIn:    'יש להתחבר ל-NetFree כדי להעלות הקלטה',
     videoFailedNote:   'הערה: העלאת סרטון הקלטת המסך נכשלה.',
     trafficFailedNote: 'הערה: העלאת הקלטת התעבורה נכשלה.',
+    cacheNote:         'המטמון (cache) של הדפדפן היה כבוי לאורך כל ההקלטה, כך שהתוכן נטען מהרשת ולא מהמטמון.',
     recBusy:           'הקלטה כבר פעילה',
     screenTicketSubject: (host) => `בקשה עם הקלטת מסך - ${host}`,
     screenTicketIntro:   (host) => `שלום,\nמצורפת הקלטת מסך שמדגימה את הבעיה שאני נתקל בה${host ? ` באתר ${host}` : ''}. אבקש לבדוק ולאשר. תודה רבה.`,
@@ -156,6 +157,7 @@ const T = {
     recNotLoggedIn:    'Log in to NetFree to upload a recording',
     videoFailedNote:   'Note: the screen-recording video failed to upload.',
     trafficFailedNote: 'Note: the traffic recording failed to upload.',
+    cacheNote:         'The browser cache was off for the whole recording, so content was loaded from the network, not from the cache.',
     recBusy:           'A recording is already in progress',
     screenTicketSubject: (host) => `Screen recording request — ${host}`,
     screenTicketIntro:   (host) => `Hello,\nAttached is a screen recording showing the problem I'm experiencing${host ? ` on ${host}` : ''}. Please review and approve. Thank you.`,
@@ -961,7 +963,7 @@ async function startTrafficRecordAndClose(focusGroup, ticketUrl) {
   try {
     await chrome.runtime.sendMessage({
       type: 'START_TRAFFIC_RECORD', tabId,
-      ticket: { subject, body, ticketUrl, trafficLabel },
+      ticket: { subject, body, ticketUrl, trafficLabel, cacheNote: T[lang].cacheNote },
     });
   } catch { /* SW asleep/closing — worst case the recording doesn't start */ }
   window.close();
@@ -1046,6 +1048,7 @@ async function startScreenRec() {
     // The background appends "<label>: <view-url>" for the traffic
     // recording captured alongside the video — localized here, used there.
     trafficLabel:      lang === 'he' ? 'הקלטת תעבורה' : 'Traffic recording',
+    cacheNote:         t.cacheNote,
     videoFailedNote:   t.videoFailedNote,
     trafficFailedNote: t.trafficFailedNote,
   };

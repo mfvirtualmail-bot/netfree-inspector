@@ -1,6 +1,6 @@
 # Privacy Policy — NetFree Inspector
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-11-03
 
 ---
 
@@ -26,7 +26,7 @@ NetFree Inspector detects HTTP 418 responses — NetFree's block signal ([https:
 - **`desktopCapture`** — only when you start a screen recording, to capture the screen area you pick.
 - **`scripting`** — inject a small helper on NetFree's request page to pre-fill the form for you.
 - **`system.display`** — position the screen-recording helper window correctly across monitors.
-- **`declarativeNetRequestWithHostAccess`** — set the correct `Origin` header on the single request to NetFree's traffic stream so NetFree returns your live traffic data (a session-scoped rule limited to `netfree.link`).
+- **`declarativeNetRequestWithHostAccess`** — two temporary (session-scoped) rules, active only while a recording you started is running: (1) set the correct `Origin` header on the single request to NetFree's traffic stream so NetFree returns your live traffic data (limited to `netfree.link`); (2) add `Cache-Control: no-cache` to the browser's requests, so pages load from the network instead of the browser cache and the recording is complete — the same headers a hard reload sends. Neither rule reads or changes page content, and both are removed as soon as the recording stops.
 - **`<all_urls>` host permission** — NetFree can block on any site, so the extension must observe responses on all URLs. It reads status codes and URLs; it does not read or modify page content for detection.
 
 ### 3. Data processed locally (does not leave your browser on its own)
@@ -99,7 +99,7 @@ NetFree Inspector מזהה תגובות HTTP 418 — אות החסימה של נ
 - **`desktopCapture`** — רק כשאתה מתחיל הקלטת מסך, כדי ללכוד את אזור המסך שבחרת.
 - **`scripting`** — להזריק רכיב עזר קטן בדף הבקשה של נט פרי כדי למלא עבורך את הטופס.
 - **`system.display`** — למקם נכון את חלון עזר ההקלטה בין המסכים.
-- **`declarativeNetRequestWithHostAccess`** — להגדיר כותרת `Origin` נכונה בבקשה היחידה לשידור התעבורה של נט פרי, כדי שנט פרי תחזיר את נתוני התעבורה החיים שלך (כלל זמני המוגבל ל-`netfree.link`).
+- **`declarativeNetRequestWithHostAccess`** — שני כללים זמניים, הפעילים רק בזמן הקלטה שהתחלת: (1) להגדיר כותרת `Origin` נכונה בבקשה היחידה לשידור התעבורה של נט פרי, כדי שנט פרי תחזיר את נתוני התעבורה החיים שלך (מוגבל ל-`netfree.link`); (2) להוסיף לבקשות הדפדפן את הכותרת `Cache-Control: no-cache`, כדי שהדפים ייטענו מהרשת ולא מהמטמון (cache) של הדפדפן וההקלטה תהיה מלאה — אותן כותרות שרענון מלא של הדף שולח. הכללים אינם קוראים או משנים את תוכן הדף, ושניהם מוסרים מיד כשההקלטה נעצרת.
 - **הרשאת `<all_urls>`** — נט פרי יכולה לחסום בכל אתר, ולכן ההרחבה חייבת לצפות בתגובות מכל הכתובות. היא קוראת קודי סטטוס וכתובות; היא אינה קוראת או משנה את תוכן הדף לצורך הזיהוי.
 
 ### 3. מידע המעובד מקומית (אינו יוצא מהדפדפן מעצמו)

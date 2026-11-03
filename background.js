@@ -348,8 +348,6 @@ const RT_SAVE_URL    = 'https://netfree.link/api/user/save-traffic-record';
 const RT_VIEW_PREFIX = 'https://netfree.link/app/#/tools/traffic/view/';
 const RT_DNR_RULE_ID = 9102;          // sibling of the recorder's 9101; own lifecycle
 const RT_MAX_EVENTS  = 300000;        // hard cap so a long capture can't OOM
-const RT_TAIL_MS     = 3500;          // keep capturing this long after load completes
-const RT_MAX_MS      = 25000;         // hard ceiling on one capture
 
 let rtCap = null;   // { events, diag, abort } while a capture is streaming
 
@@ -449,13 +447,64 @@ async function rtBuildAndUpload() {
   }
 }
 
+// ── Cache off for the whole recording ──────────────────────────────────────
+// Anything the browser serves from its cache never reaches NetFree's filter, so
+// it is missing from the recording — the reason NetFree keeps asking users to
+// "open a guest window / clear the cache and record again". The hard reload at
+// the start of a recording only covers that one page load: whatever the page
+// fetches AFTER it (what the user clicks, lazily shown images, API calls, a
+// link opened in another tab) came straight from the cache again (verified:
+// none of it reached the network). So while a recording is capturing, this
+// session rule sends every request with "Cache-Control: no-cache" — the headers
+// a hard reload sends, and what DevTools' "Disable cache" does — and Chrome
+// fetches it fresh from the network. The user's cache isn't deleted, just not
+// read until the recording stops. Browser-wide, because NetFree's stream sees
+// the whole browser and a demonstration may move to another tab or a popup.
+//
+// One rule serves both recording kinds and follows their stored state
+// ('recording' = on, anything else = off), so it survives a worker restart
+// during a screen recording and is never left on once nothing is capturing.
+// trSet/srSet re-sync it on every state change.
+const NOCACHE_RULE_ID = 9103;   // sibling of the Origin rules 9101 / 9102
+const NOCACHE_RULE = {
+  id: NOCACHE_RULE_ID, priority: 1,
+  action: { type: 'modifyHeaders', requestHeaders: [
+    { header: 'cache-control', operation: 'set', value: 'no-cache' },
+    { header: 'pragma',        operation: 'set', value: 'no-cache' },
+  ] },
+  // Every HTTP resource type, main_frame included (it is only matched when
+  // listed). WebSocket handshakes already send no-cache themselves.
+  condition: { resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font',
+    'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'other'] },
+};
+
+// Serialized, so overlapping state changes can't apply out of order.
+let cacheOffChain = Promise.resolve();
+function syncCacheOff() {
+  cacheOffChain = cacheOffChain.then(applyCacheOff, applyCacheOff);
+  return cacheOffChain;
+}
+async function applyCacheOff() {
+  let want;
+  try {
+    const r = await chrome.storage.local.get([TR_STATE, SR_STATE]);
+    want = [r[TR_STATE], r[SR_STATE]].some(s => s && s.status === 'recording');
+  } catch { return; }                    // can't tell — leave the rule as it is
+  try {
+    const have = (await chrome.declarativeNetRequest.getSessionRules()).some(x => x.id === NOCACHE_RULE_ID);
+    if (want === have) return;
+    await chrome.declarativeNetRequest.updateSessionRules(want
+      ? { removeRuleIds: [NOCACHE_RULE_ID], addRules: [NOCACHE_RULE] }
+      : { removeRuleIds: [NOCACHE_RULE_ID] });
+  } catch { /* the recording still gets the reload's one-time cache bypass */ }
+}
+
 // ── Interactive traffic recording (on-page pill, manual stop) ──────────────
 // The user often must USE the page while it records — click a control, press
 // play on the video they're reporting — so a fixed auto-capture window is
-// wrong. Instead: start the stream, hard-reload (bypassCache, so cached
-// sub-resources are re-fetched over the network and actually land in the
-// recording — the silent cache gap is why NetFree kept asking users to "open a
-// new window / clear cache and redo it"), then show a small on-page pill with a
+// wrong. Instead: start the stream, turn the cache off (above) and hard-reload
+// (bypassCache), so the whole demonstration is fetched over the network and
+// actually lands in the recording, then show a small on-page pill with a
 // Stop button (traffic-overlay.js). The user demonstrates, hits Stop, and the
 // WORKER uploads the real recording and opens the pre-filled request form — the
 // popup is gone the instant the user clicks the page, so the pill is the
@@ -472,6 +521,7 @@ let trFinalizing = false;
 async function trSet(state) {
   try { if (state) await chrome.storage.local.set({ [TR_STATE]: state }); else await chrome.storage.local.remove(TR_STATE); }
   catch { /* pill just won't reflect it */ }
+  await syncCacheOff();
 }
 async function trResult(result) {
   try { await chrome.storage.local.set({ [TR_RESULT]: { ...result, ts: Date.now() } }); } catch { /* ok */ }
@@ -533,8 +583,12 @@ async function startInteractiveTrafficRecord({ tabId, ticket }) {
   trTabId = tabId; trTicket = ticket || null; trFinalizing = false;
   await rtStartCapture();
   await new Promise((r) => setTimeout(r, 400));      // let the stream connect first
+  // Tab closed meanwhile → onRemoved already finished this recording; don't
+  // re-flag it 'recording' (nothing would ever clear it, nor turn the cache on).
+  if (trTabId !== tabId || trFinalizing) return { ok: false, error: 'no-tab' };
   await trSet({ status: 'recording', startedAt: Date.now(), tabId });
-  try { await chrome.tabs.reload(tabId, { bypassCache: true }); } catch { /* tab gone */ }
+  try { await chrome.tabs.reload(tabId, { bypassCache: true }); }
+  catch { stopInteractiveTrafficRecord('tab-closed'); return { ok: false, error: 'no-tab' }; }
   // The onCompleted listener below (re)injects the pill once the page is ready;
   // nudge it too in case that timing is missed.
   setTimeout(() => injectTrafficOverlay(tabId), 1200);
@@ -558,6 +612,7 @@ async function stopInteractiveTrafficRecord(/* reason */) {
     if (res.ok && res.url) {
       const label = (ticket && ticket.trafficLabel) || 'הקלטת תעבורה';
       body = `${body}\n\n${label}: ${res.url}`;
+      if (ticket && ticket.cacheNote) body += `\n\n${ticket.cacheNote}`;
     }
     if (!res.ok && res.error === 'not-authenticated') {
       // Logged out of the netfree.link account — the recording is already lost
@@ -618,6 +673,7 @@ async function srSet(state) {
     if (state) await chrome.storage.local.set({ [SR_STATE]: state });
     else       await chrome.storage.local.remove(SR_STATE);
   } catch { /* storage gone — popup just won't reflect state */ }
+  await syncCacheOff();
 }
 async function srResult(result) {
   try { await chrome.storage.local.set({ [SR_RESULT]: { ...result, ts: Date.now() } }); }
@@ -752,12 +808,13 @@ async function handleRecorderStarted() {
   // deliberately restores it later isn't fought.
   minimizeRecorderWindow(st.recorderWinId);
 
-  // Hard-reload the tab this recording was launched from so cached sub-resources
-  // re-fetch over the network and land in the captured traffic — the same
-  // cache-busting the traffic recording does (otherwise cached items never hit
-  // NetFree's filter and are invisible in the recording). The short delay lets
-  // the recorder window's SSE stream connect first, so the reload's very first
-  // events are captured too. The video then also shows the page loading fresh.
+  // The 'recording' state above already turned the cache off for the rest of
+  // the recording. Also hard-reload the tab this recording was launched from, so
+  // what it had loaded BEFORE the recording is fetched again and lands in the
+  // captured traffic too — the same as the traffic recording does. The short
+  // delay lets the recorder window's SSE stream connect first, so the reload's
+  // very first events are captured too. The video then also shows the page
+  // loading fresh.
   if (st.tabId != null) {
     const reloadTabId = st.tabId;
     setTimeout(() => { try { chrome.tabs.reload(reloadTabId, { bypassCache: true }); } catch { /* tab gone */ } }, 700);
@@ -1123,6 +1180,23 @@ chrome.windows.onRemoved.addListener(async (winId) => {
   } catch { /* best effort */ }
 })();
 
+// The interactive traffic recording lives only in this worker's memory (the
+// stream reader, the ticket), so a 'recording'/'uploading' flag found by a NEW
+// worker belongs to a recording that died with the old one. Clear it — the pill
+// would otherwise sit at "Recording…" with a Stop that does nothing, and the
+// cache would stay off — and flash the failure so the user records again.
+async function reconcileTrafficRecording() {
+  try {
+    const st = (await chrome.storage.local.get(TR_STATE))[TR_STATE];
+    if (st && trTabId == null) {
+      await trSet(null);
+      await trResult({ ok: false, error: 'interrupted' });
+    }
+  } catch { /* best effort */ }
+  await syncCacheOff();   // e.g. a rule left behind by a screen recording that ended unseen
+}
+reconcileTrafficRecording();
+
 // Stash the finished ticket (subject + intro + video embed + traffic-
 // recording link) for netfree-fill, then open NetFree's new-ticket form.
 // Opened as a regular TAB in the last-focused window — a transient popup
@@ -1136,8 +1210,10 @@ async function finalizeScreenTicket(state, filekey, trafficUrl, trafficFailed) {
   if (ticket.bodyIntro) parts.push(ticket.bodyIntro);
   if (filekey) parts.push(`[video-embedded#](/upload-file/${filekey})`);
   else         parts.push(ticket.videoFailedNote || 'Note: the screen-recording video failed to upload.');
-  if (trafficUrl) parts.push(`${ticket.trafficLabel || 'Traffic recording'}: ${trafficUrl}`);
-  else if (trafficFailed) parts.push(ticket.trafficFailedNote || 'Note: the traffic recording failed to upload.');
+  if (trafficUrl) {
+    parts.push(`${ticket.trafficLabel || 'Traffic recording'}: ${trafficUrl}`);
+    if (ticket.cacheNote) parts.push(ticket.cacheNote);
+  } else if (trafficFailed) parts.push(ticket.trafficFailedNote || 'Note: the traffic recording failed to upload.');
   const body = parts.join('\n\n');
   try {
     await chrome.storage.local.set({ pendingTicket: { subject, body, ts: Date.now() } });
@@ -1654,6 +1730,10 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
 // ─────────────────────────────────────────────────────────
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  // Closing the tab of an interactive traffic recording also closes its Stop
+  // pill — finish it now rather than letting it run (cache off) until the
+  // 2-minute cap and then pop the request form up out of nowhere.
+  if (trTabId != null && tabId === trTabId) stopInteractiveTrafficRecord('tab-closed');
   await clearTabData(tabId);
   await stopRecording(tabId);
 });

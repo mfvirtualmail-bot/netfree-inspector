@@ -123,7 +123,9 @@ There is **no build step** and **no test suite**. Commands that do exist:
 | `manifest_version` | 3 |
 | `name` | NetFree Inspector |
 | `version` | see `manifest.json` for current (1.7.0+) |
-| `permissions` | `webRequest`, `tabs`, `storage`, `webNavigation`, `alarms`, `desktopCapture`, `scripting`, `system.display` |
+| `permissions` | `webRequest`, `tabs`, `storage`, `webNavigation`, `alarms`, `desktopCapture`, `scripting`, `system.display`, `declarativeNetRequestWithHostAccess` |
+| DNR session rules | `9101` recorder window + `9102` worker: rewrite `Origin` on the request to NetFree's SSE traffic stream. `9103` (`syncCacheOff` in background.js): `Cache-Control: no-cache` on every request while a recording's state is `'recording'`, so nothing is served from the browser cache and missed by the recording. All three exist only during a recording — `store/privacy-policy.md` describes them; keep it in sync. |
+| `content_scripts` | `netfree-fill.js` on `https://netfree.link/*` — pre-fills NetFree's new-ticket form from `pendingTicket` |
 | `host_permissions` | `<all_urls>` (needed to observe 418 responses on any site) |
 | `background.service_worker` | `background.js` |
 | `action.default_popup` | `popup.html` |
@@ -146,8 +148,14 @@ recorder.html/.js        Recorder window — shows the desktopCapture picker, re
                          the context that requested it. Persists across navigation.
 rec-overlay.js           Injected (chrome.scripting) while recording — floating draggable
                          stop pill on every page; also flashes the upload outcome.
+traffic-overlay.js       Same idea for the interactive TRAFFIC recording ("Open request"):
+                         Stop pill on the recorded tab only.
+sse-recording.js         Parser/grouper for NetFree's own live traffic stream (SSE) — the
+                         source of the real recordings (loaded by background.js + recorder)
 traffic-recording.js     Reconstructed-traffic recording builder + uploader (loaded by
-                         both popup.html and background.js)
+                         both popup.html and background.js) — fallback when the stream
+                         produced nothing
+netfree-fill.js          Content script on netfree.link — fills the new-ticket form
 options.html/.js         Options/preferences page
 harmless-domains.js      Allowlist of ignorable 3rd-party domains
 create-icons.js          Pure-Node PNG icon generator
@@ -156,6 +164,7 @@ docs/                    GitHub Pages site root — index.html landing page +
                          harmless-domains.json (fetched daily by the extension)
 store/                   Chrome Web Store submission kit (listings, privacy policy,
                          promo tile, screenshots guide, upload ZIPs)
+scripts/release.ps1      Version bump + ZIP build + GitHub pre-release
 README.md                User-facing docs
 CLAUDE.md                This file
 .gitignore
